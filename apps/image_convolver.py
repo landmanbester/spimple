@@ -118,7 +118,10 @@ def image_convolver():
 
     # convolve image
     imagei = load_fits(opts.image, dtype=np.float32).squeeze()
-    imagei = np.atleast_3d(imagei)
+    if imagei.ndim==2:
+        imagei = imagei[None, :, :]
+    if imagei.ndim != 3:
+        raise ValueError("Unsupported number of image dimensions")
     image, gausskern = convolve2gaussres(imagei, xx, yy, gaussparf, opts.ncpu, gausspari, opts.padding_frac)
 
     # load beam and correct
