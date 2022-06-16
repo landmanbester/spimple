@@ -1,5 +1,5 @@
 from setuptools import setup, find_packages
-import pfb
+import spimple
 
 with open("README.md", "r") as fh:
     long_description = fh.read()
@@ -10,6 +10,7 @@ requirements = [
                 'pytest >= 6.2.2',
                 'pyscilog >= 0.1.2',
                 'codex-africanus[complete]',
+                'dask-ms[xarray]',
             ]
 
 
