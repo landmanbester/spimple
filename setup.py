@@ -30,9 +30,11 @@ setup(
          "License :: OSI Approved :: MIT License",
          "Operating System :: OS Independent",
      ],
-     entry_points='''
-                    [console_scripts]
-                    imconv=apps.image_convolver:image_convolver
-     '''
+     entry_points={
+                    'console_scripts': [
+                    'imconv=apps.image_convolver:image_convolver',
+                    'spifit=apps.spi_fitter:spi_fitter'
+                    ]
+     }
      ,
  )

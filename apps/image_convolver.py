@@ -8,35 +8,34 @@ import argparse
 from omegaconf import OmegaConf
 import numpy as np
 from astropy.io import fits
-from pfb.utils import load_fits, save_fits, convolve2gaussres, data_from_header
+from spimple.utils import load_fits, save_fits, convolve2gaussres, data_from_header
 
 
 def image_convolver():
     parser = argparse.ArgumentParser(description='Convolve images to a common resolution.',
                                 formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-image', "--image", type=str, required=True)
-    parser.add_argument('-o', '--output-filename', type=str,
-                   help="Path to output directory. \n"
-                        "Placed next to input model if outfile not provided.")
+    parser.add_argument('-o', '--output-filename', type=str, required=True,
+                        help="Path to output directory.")
     parser.add_argument('-pp', '--psf-pars', default=None, nargs='+', type=float,
-                   help="Beam parameters matching FWHM of restoring beam "
+                        help="Beam parameters matching FWHM of restoring beam "
                         "specified as emaj emin pa. \n"
                         "By default these are taken from the fits header "
-                        "of the residual image.")
+                        "of the image.")
     parser.add_argument('-nthreads', '--nthreads', default=0, type=int,
                    help="Number of threads to use. \n"
                         "Default of zero means use all threads")
     parser.add_argument('-cp', "--circ-psf", action="store_true",
-                   help="Passing this flag will convolve with a circularised "
-                   "beam instead of an elliptical one")
+                        help="Passing this flag will convolve with a circularised "
+                        "beam instead of an elliptical one")
     parser.add_argument('-bm', '--beam-model', default=None, type=str,
-                   help="Fits beam model to use. \n"
+                        help="Fits beam model to use. \n"
                         "Use power_beam_maker to make power beam "
                         "corresponding to image. ")
     parser.add_argument('-pb-min', '--pb-min', type=float, default=0.05,
-                   help="Set image to zero where pb falls below this value")
+                        help="Set image to zero where pb falls below this value")
     parser.add_argument('-pf', '--padding-frac', type=float, default=0.5,
-                   help="Padding fraction for FFTs (half on either side)")
+                        help="Padding fraction for FFTs (half on either side)")
     opts = parser.parse_args()
     opts = OmegaConf.create(opts)
     pyscilog.log_to_file(f'image_convolver.log')

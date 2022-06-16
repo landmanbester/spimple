@@ -2,6 +2,67 @@ import numpy as np
 from ducc0.fft import good_size, r2c, c2r
 iFs = np.fft.ifftshift
 Fs = np.fft.fftshift
+from astropy.io import fits
+
+
+def to4d(data):
+    if data.ndim == 4:
+        return data
+    elif data.ndim == 2:
+        return data[None, None]
+    elif data.ndim == 3:
+        return data[None]
+    elif data.ndim == 1:
+        return data[None, None, None]
+    else:
+        raise ValueError("Only arrays with ndim <= 4 can be broadcast to 4D.")
+
+
+def data_from_header(hdr, axis=3, zero_ref=False):
+    npix = hdr['NAXIS' + str(axis)]
+    refpix = hdr['CRPIX' + str(axis)]
+    delta = hdr['CDELT' + str(axis)]
+    ref_val = hdr['CRVAL' + str(axis)]
+    return ref_val + np.arange(1 - refpix, 1 + npix - refpix) * delta, ref_val
+
+
+def load_fits(name, dtype=np.float32):
+    data = fits.getdata(name)
+    data = np.transpose(to4d(data)[:, :, ::-1], axes=(0, 1, 3, 2))
+    return np.require(data, dtype=dtype, requirements='C')
+
+
+def save_fits(name, data, hdr, overwrite=True, dtype=np.float32):
+    hdu = fits.PrimaryHDU(header=hdr)
+    data = np.transpose(to4d(data), axes=(0, 1, 3, 2))[:, :, ::-1]
+    hdu.data = np.require(data, dtype=dtype, requirements='F')
+    hdu.writeto(name, overwrite=overwrite)
+
+
+def set_header_info(mhdr, ref_freq, freq_axis, args, beampars):
+    hdr_keys = ['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'NAXIS3',
+                'NAXIS4', 'CTYPE1', 'CTYPE2', 'CTYPE3', 'CTYPE4', 'CRPIX1',
+                'CRPIX2', 'CRPIX3', 'CRPIX4', 'CRVAL1', 'CRVAL2', 'CRVAL3',
+                'CRVAL4', 'CDELT1', 'CDELT2', 'CDELT3', 'CDELT4']
+
+    new_hdr = {}
+    for key in hdr_keys:
+        new_hdr[key] = mhdr[key]
+
+    if freq_axis == 3:
+        new_hdr["NAXIS3"] = 1
+        new_hdr["CRVAL3"] = ref_freq
+    elif freq_axis == 4:
+        new_hdr["NAXIS4"] = 1
+        new_hdr["CRVAL4"] = ref_freq
+
+    new_hdr['BMAJ'] = beampars[0]
+    new_hdr['BMIN'] = beampars[1]
+    new_hdr['BPA'] = beampars[2]
+
+    new_hdr = fits.Header(new_hdr)
+
+    return new_hdr
 
 
 def Gaussian2D(xin, yin, GaussPar=(1., 1., 0.), normalise=True):
