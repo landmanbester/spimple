@@ -86,7 +86,8 @@ def image_convolver():
         raise ValueError("No psf parameters in fits file and none passed in.", file=log)
 
     if len(gausspari) == 0:
-        print("No psf parameters in fits file. Convolving model to resolution specified by psf-pars.", file=log)
+        print("No psf parameters in fits file. "
+              "Convolving model to resolution specified by psf-pars.", file=log)
         gaussparf = tuple(opts.psf_pars)
     else:
         if opts.psf_pars is None:
@@ -117,6 +118,7 @@ def image_convolver():
 
     # convolve image
     imagei = load_fits(opts.image, dtype=np.float32).squeeze()
+    imagei = np.atleast_3d(imagei)
     image, gausskern = convolve2gaussres(imagei, xx, yy, gaussparf, opts.ncpu, gausspari, opts.padding_frac)
 
     # load beam and correct
@@ -125,37 +127,34 @@ def image_convolver():
         l_coord_beam, ref_lb = data_from_header(bhdr, axis=1)
         l_coord_beam -= ref_lb
         if not np.array_equal(l_coord_beam, l_coord):
-            raise ValueError("l coordinates of beam model do not match those of image. Use power_beam_maker to interpolate to fits header.")
+            raise ValueError("l coordinates of beam model do not match those of image. "
+                             "Use power_beam_maker to interpolate to fits header.")
 
         m_coord_beam, ref_mb = data_from_header(bhdr, axis=2)
         m_coord_beam -= ref_mb
         if not np.array_equal(m_coord_beam, m_coord):
-            raise ValueError("m coordinates of beam model do not match those of image. Use power_beam_maker to interpolate to fits header.")
+            raise ValueError("m coordinates of beam model do not match those of image. "
+                             "Use power_beam_maker to interpolate to fits header.")
 
         freqs_beam, _ = data_from_header(bhdr, axis=freq_axis)
         if not np.array_equal(freqs, freqs_beam):
-            raise ValueError("Freqs of beam model do not match those of image. Use power_beam_maker to interpolate to fits header.")
+            raise ValueError("Freqs of beam model do not match those of image. "
+                             "Use power_beam_maker to interpolate to fits header.")
 
         beam_image = load_fits(opts.beam_model, dtype=np.float32).squeeze()
 
         image = np.where(beam_image >= opts.pb_min, image/beam_image, 0.0)
 
-    # save next to model if no outfile is provided
-    if opts.output_filename is None:
-        # strip .fits from model filename
-        tmp = opts.model[::-1]
-        idx = tmp.find('.')
-        outfile = opts.model[0:-idx]
-    else:
-        outfile = opts.output_filename
+
+    outfile = opts.output_filename
 
     # save images
     name = outfile + '.clean_psf.fits'
     save_fits(name, gausskern, hdr)
-    print("Wrote clean psf to %s \n" % name, file=log)
+    print(f"Wrote clean psf to {name}", file=log)
 
     name = outfile + '.convolved.fits'
     save_fits(name, image, hdr)
-    print("Wrote convolved model to %s \n" % name, file=log)
+    print(f"Wrote convolved model to {name}", file=log)
 
     print("All done here", file=log)

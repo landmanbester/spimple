@@ -180,11 +180,12 @@ def spi_fitter():
 
     if opts.ref_freq is not None and opts.ref_freq != ref_freq:
         ref_freq = opts.ref_freq
-        print('Provided reference frequency does not match that of fits file. Will overwrite.', file=log)
+        print("Provided reference frequency does not match that of fits file. "
+              "Will overwrite.", file=log)
 
     print("Cube frequencies:", file=log)
     with np.printoptions(precision=2):
-        print(freqs)
+        print(freqs, file=log)
     print("Reference frequency is %3.2e Hz" % ref_freq, file=log)
 
     # LB - new header for cubes if ref_freqs differ
@@ -209,16 +210,19 @@ def spi_fitter():
             l_coord_beam, ref_lb = data_from_header(bhdr, axis=1)
             l_coord_beam -= ref_lb
             if not np.array_equal(l_coord_beam, l_coord):
-                raise ValueError("l coordinates of beam model do not match those of image. Use power_beam_maker to interpolate to fits header.")
+                raise ValueError("l coordinates of beam model do not match those of image. "
+                                 "Use power_beam_maker to interpolate to fits header.")
 
             m_coord_beam, ref_mb = data_from_header(bhdr, axis=2)
             m_coord_beam -= ref_mb
             if not np.array_equal(m_coord_beam, m_coord):
-                raise ValueError("m coordinates of beam model do not match those of image. Use power_beam_maker to interpolate to fits header.")
+                raise ValueError("m coordinates of beam model do not match those of image. "
+                                 "Use power_beam_maker to interpolate to fits header.")
 
             freqs_beam, _ = data_from_header(bhdr, axis=freq_axis)
             if not np.array_equal(freqs, freqs_beam):
-                raise ValueError("Freqs of beam model do not match those of image. Use power_beam_maker to interpolate to fits header.")
+                raise ValueError("Freqs of beam model do not match those of image. "
+                                 "Use power_beam_maker to interpolate to fits header.")
 
             beam_image = load_fits(opts.beam_model, dtype=opts.out_dtype).squeeze()
         elif opts.beam_model == "JimBeam":
@@ -237,7 +241,7 @@ def spi_fitter():
         if 'b' in opts.products:
             name = outfile + '.power_beam.fits'
             save_fits(name, np.expand_dims(beam_image, axis=4 - stokes_axis), mhdr, dtype=opts.out_dtype)
-            print("Wrote average power beam to %s" % name, file=log)
+            print(f"Wrote average power beam to {name}", file=log)
 
     else:
         beam_image = np.ones(model.shape, dtype=opts.out_dtype)
@@ -254,13 +258,13 @@ def spi_fitter():
         if 'c' in opts.products:
             name = outfile + '.clean_psf.fits'
             save_fits(name, gausskern, new_hdr, dtype=opts.out_dtype)
-            print("Wrote clean psf to %s" % name, file=log)
+            print(f"Wrote clean psf to {name}", file=log)
 
         # save convolved model
         if 'm' in opts.products:
             name = outfile + '.convolved_model.fits'
             save_fits(name, model, new_hdr, dtype=opts.out_dtype)
-            print("Wrote convolved model to %s" % name, file=log)
+            print(f"Wrote convolved model to {name}", file=log)
 
 
     # add in residuals and set threshold
@@ -296,7 +300,7 @@ def spi_fitter():
                 break
 
         if gausspari is not None and opts.add_convolved_residuals:
-            print("Convolving residuals")
+            print("Convolving residuals", file=log)
             resid, _ = convolve2gaussres(resid, xx, yy, gaussparf, opts.ncpu, gausspari, opts.padding_frac, norm_kernel=False)
             model += resid
             print("Convolved residuals added to convolved model", file=log)
@@ -304,24 +308,22 @@ def spi_fitter():
             if 'r' in opts.products:
                 name = outfile + '.convolved_residual.fits'
                 save_fits(name, resid, rhdr)
-                print("Wrote convolved residuals to %s" % name, file=log)
-
-
+                print(f"Wrote convolved residuals to {name}", file=log)
 
         counts = np.sum(resid != 0)
         rms = np.sqrt(np.sum(resid**2)/counts)
         rms_cube = np.std(resid.reshape(nband, npix_l*npix_m), axis=1).ravel()
         threshold = opts.threshold * rms
-        print("Setting cutoff threshold as %i times the rms "
-            "of the residual " % opts.threshold, file=log)
+        print(f"Setting cutoff threshold as {opts.threshold} times the rms "
+              "of the residual ", file=log)
         del resid
     else:
         print("No residual provided. Setting  threshold i.t.o dynamic range. "
-            "Max dynamic range is %i " % opts.maxDR, file=log)
+              f"Max dynamic range is {opts.maxDR}", file=log)
         threshold = model.max()/opts.maxDR
         rms_cube = None
 
-    print("Threshold set to %f Jy. \n" % threshold, file=log)
+    print(f"Threshold set to {threshold} Jy.", file=log)
 
     # get pixels above threshold
     minimage = np.amin(model, axis=0)
@@ -356,7 +358,7 @@ def spi_fitter():
     weights = da.from_array(weights.astype(np.float64), chunks=(nband))
     freqsdask = da.from_array(freqs.astype(np.float64), chunks=(nband))
 
-    print("Fitting %i components" % ncomps, file=log)
+    print("Fitting {ncomps} components", file=log)
     alpha, alpha_err, Iref, i0_err = fit_spi_components(fitcube, weights, freqsdask,
                                         np.float64(ref_freq), beam=beam_comps).compute()
     print("Done. Writing output.", file=log)
@@ -380,30 +382,30 @@ def spi_fitter():
             (freqs[:, None, None]/ref_freq)**alphamap[None, :, :]
         name = outfile + '.Irec_cube.fits'
         save_fits(name, np.expand_dims(Irec_cube, axis=4 - stokes_axis), mhdr, dtype=opts.out_dtype)
-        print("Wrote reconstructed cube to %s" % name, file=log)
+        print(f"Wrote reconstructed cube to {name}", file=log)
 
     # save alpha map
     if 'a' in opts.products:
         name = outfile + '.alpha.fits'
         save_fits(name, alphamap, mhdr, dtype=opts.out_dtype)
-        print("Wrote alpha map to %s" % name, file=log)
+        print(f"Wrote alpha map to {name}", file=log)
 
     # save alpha error map
     if 'e' in opts.products:
         name = outfile + '.alpha_err.fits'
         save_fits(name, alpha_err_map, mhdr, dtype=opts.out_dtype)
-        print("Wrote alpha error map to %s" % name, file=log)
+        print(f"Wrote alpha error map to {name}", file=log)
 
     # save I0 map
     if 'i' in opts.products:
         name = outfile + '.I0.fits'
         save_fits(name, i0map, mhdr, dtype=opts.out_dtype)
-        print("Wrote I0 map to %s" % name, file=log)
+        print(f"Wrote I0 map to {name}", file=log)
 
     # save I0 error map
     if 'k' in opts.products:
         name = outfile + '.I0_err.fits'
         save_fits(name, i0_err_map, mhdr, dtype=opts.out_dtype)
-        print("Wrote I0 error map to %s" % name, file=log)
+        print(f"Wrote I0 error map to {name}", file=log)
 
     print("All done here", file=log)

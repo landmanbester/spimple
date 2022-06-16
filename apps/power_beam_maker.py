@@ -106,7 +106,7 @@ def extract_dde_info(opts, freqs):
 
 
 def make_power_beam(opts, lm_source, freqs, use_dask):
-    print("Loading fits beam patterns from %s" % opts.beam_model)
+    print(f"Loading fits beam patterns from {opts.beam_model}", file=log)
     from glob import glob
     paths = glob(opts.beam_model + '**_**.fits')
     beam_hdr = None
@@ -177,9 +177,9 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     bfreqs = freq0 + np.arange(1 - refpix, 1 + nchan - refpix) * delta
     if bfreqs[0] > freqs[0] or bfreqs[-1] < freqs[-1]:
         warnings.warn("The supplied beam does not have sufficient "
-                        "bandwidth. Beam frequencies:")
+                       "bandwidth. Beam frequencies:", file=log)
         with np.printoptions(precision=2):
-            print(bfreqs)
+            print(bfreqs, file=log)
 
     if use_dask:
         return (da.from_array(beam_amp, chunks=beam_amp.shape),
@@ -194,7 +194,7 @@ def interpolate_beam(ll, mm, freqs, opts):
     over time if MS is provoded
     """
     nband = freqs.size
-    print("Interpolating beam")
+    print("Interpolating beam", file=log)
     parangles, ant_scale, point_errs, unflag_counts, use_dask = extract_dde_info(opts, freqs)
 
     lm_source = np.vstack((ll.ravel(), mm.ravel())).T
@@ -301,10 +301,9 @@ def power_beam_maker():
     # interpolate primary beam to fits header and optionally average over time
     beam_image = interpolate_beam(xx, yy, freqs, opts)
 
-
     # save power beam
     save_fits(opts.output_filename, beam_image, hdr)
-    print("Wrote interpolated beam cube to %s \n" % opts.output_filename, file=log)
+    print(f"Wrote interpolated beam cube to {opts.output_filename}", file=log)
 
 
     return
