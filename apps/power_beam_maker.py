@@ -2,8 +2,11 @@
 # -*- coding: utf-8 -*-
 # flake8: noqa
 
+import pyscilog
+pyscilog.init('spimple')
+log = pyscilog.get_logger('BINTERP')
 import argparse
-from pfb.utils.fits import save_fits
+from omegaconf import OmegaConf
 import dask
 import dask.array as da
 import numpy as np
@@ -12,7 +15,7 @@ from astropy.io import fits
 import warnings
 from africanus.model.spi.dask import fit_spi_components
 from africanus.rime import parallactic_angles
-from pfb.utils import load_fits, save_fits, data_from_header
+from spimple.utils import load_fits, save_fits, data_from_header
 from daskms import xds_from_ms, xds_from_table
 
 @jit(nopython=True, nogil=True, cache=True)
@@ -23,19 +26,19 @@ def _unflagged_counts(flags, time_idx, out):
             out[i] = np.sum(~flags[ilow:ihigh])
     return out
 
-def extract_dde_info(args, freqs):
+def extract_dde_info(opts, freqs):
     """
     Computes paralactic angles, antenna scaling and pointing information
-    required for beam interpolation. 
+    required for beam interpolation.
     """
     # get ms info required to compute paralactic angles and weighted sum
     nband = freqs.size
-    if args.ms is not None:
+    if opts.ms is not None:
         utimes = []
         unflag_counts = []
         ant_pos = None
         phase_dir = None
-        for ms_name in args.ms:
+        for ms_name in opts.ms:
             # get antenna positions
             ant = xds_from_table(ms_name + '::ANTENNA')[0].compute()
             if ant_pos is None:
@@ -44,29 +47,29 @@ def extract_dde_info(args, freqs):
                 tmp = ant['POSITION']
                 if not np.array_equal(ant_pos, tmp):
                     raise ValueError("Antenna positions not the same across measurement sets")
-            
+
             # get phase center for field
             field = xds_from_table(ms_name + '::FIELD')[0].compute()
             if phase_dir is None:
-                phase_dir = field['PHASE_DIR'][args.field].data.squeeze()
+                phase_dir = field['PHASE_DIR'][opts.field].data.squeeze()
             else:
-                tmp = field['PHASE_DIR'][args.field].data.squeeze()
+                tmp = field['PHASE_DIR'][opts.field].data.squeeze()
                 if not np.array_equal(phase_dir, tmp):
                     raise ValueError('Phase direction not the same across measurement sets')
 
             # get unique times and count flags
-            xds = xds_from_ms(ms_name, columns=["TIME", "FLAG_ROW"], group_cols=["FIELD_ID"])[args.field]
+            xds = xds_from_ms(ms_name, columns=["TIME", "FLAG_ROW"], group_cols=["FIELD_ID"])[opts.field]
             utime, time_idx = np.unique(xds.TIME.data.compute(), return_index=True)
             ntime = utime.size
             # extract subset of times
-            if args.sparsify_time > 1:
-                I = np.arange(0, ntime, args.sparsify_time)
+            if opts.sparsify_time > 1:
+                I = np.arange(0, ntime, opts.sparsify_time)
                 utime = utime[I]
                 time_idx = time_idx[I]
                 ntime = utime.size
-            
+
             utimes.append(utime)
-        
+
             flags = xds.FLAG_ROW.data.compute()
             unflag_count = _unflagged_counts(flags.astype(np.int32), time_idx, np.zeros(ntime, dtype=np.int32))
             unflag_counts.append(unflag_count)
@@ -74,7 +77,7 @@ def extract_dde_info(args, freqs):
         utimes = np.concatenate(utimes)
         unflag_counts = np.concatenate(unflag_counts)
         ntimes = utimes.size
-        
+
         # compute paralactic angles
         parangles = parallactic_angles(utimes, ant_pos, phase_dir)
 
@@ -94,23 +97,23 @@ def extract_dde_info(args, freqs):
     else:
         ntimes = 1
         nant = 1
-        parangles = np.zeros((ntimes, nant,), dtype=np.float64)    
+        parangles = np.zeros((ntimes, nant,), dtype=np.float64)
         ant_scale = np.ones((nant, nband, 2), dtype=np.float64)
         point_errs = np.zeros((ntimes, nant, nband, 2), dtype=np.float64)
         unflag_counts = np.array([1])
-        
+
         return (parangles, ant_scale, point_errs, unflag_counts, False)
 
 
-def make_power_beam(args, lm_source, freqs, use_dask):
-    print("Loading fits beam patterns from %s" % args.beam_model)
+def make_power_beam(opts, lm_source, freqs, use_dask):
+    print("Loading fits beam patterns from %s" % opts.beam_model)
     from glob import glob
-    paths = glob(args.beam_model + '**_**.fits')
+    paths = glob(opts.beam_model + '**_**.fits')
     beam_hdr = None
-    if args.corr_type == 'linear':
+    if opts.corr_type == 'linear':
         corr1 = 'XX'
         corr2 = 'YY'
-    elif args.corr_type == 'circular':
+    elif opts.corr_type == 'circular':
         corr1 = 'LL'
         corr2 = 'RR'
     else:
@@ -133,7 +136,7 @@ def make_power_beam(args, lm_source, freqs, use_dask):
                 corr2_im = load_fits(path)
             else:
                 raise NotImplementedError("Only re/im patterns supported")
-    
+
     # get power beam
     beam_amp = (corr1_re**2 + corr1_im**2 + corr2_re**2 + corr2_im**2)/2.0
 
@@ -180,22 +183,22 @@ def make_power_beam(args, lm_source, freqs, use_dask):
 
     if use_dask:
         return (da.from_array(beam_amp, chunks=beam_amp.shape),
-                da.from_array(beam_extents, chunks=beam_extents.shape), 
+                da.from_array(beam_extents, chunks=beam_extents.shape),
                 da.from_array(bfreqs, bfreqs.shape))
     else:
         return beam_amp, beam_extents, bfreqs
 
-def interpolate_beam(ll, mm, freqs, args):
+def interpolate_beam(ll, mm, freqs, opts):
     """
     Interpolate beam to image coordinates and optionally compute average
     over time if MS is provoded
     """
     nband = freqs.size
     print("Interpolating beam")
-    parangles, ant_scale, point_errs, unflag_counts, use_dask = extract_dde_info(args, freqs)
+    parangles, ant_scale, point_errs, unflag_counts, use_dask = extract_dde_info(opts, freqs)
 
     lm_source = np.vstack((ll.ravel(), mm.ravel())).T
-    beam_amp, beam_extents, bfreqs = make_power_beam(args, lm_source, freqs, use_dask)
+    beam_amp, beam_extents, bfreqs = make_power_beam(opts, lm_source, freqs, use_dask)
 
     # interpolate beam
     if use_dask:
@@ -204,7 +207,7 @@ def interpolate_beam(ll, mm, freqs, args):
         freqs = da.from_array(freqs, chunks=freqs.shape)
         # compute ncpu images at a time to avoid memory errors
         ntimes = parangles.shape[0]
-        I = np.arange(0, ntimes, args.ncpu)
+        I = np.arange(0, ntimes, opts.ncpu)
         nchunks = I.size
         I = np.append(I, ntimes)
         beam_image = np.zeros((ll.size, 1, nband), dtype=beam_amp.dtype)
@@ -228,27 +231,26 @@ def interpolate_beam(ll, mm, freqs, args):
         beam_image = beam_cube_dde(beam_amp, beam_extents, bfreqs,
                                     lm_source, parangles, point_errs,
                                     ant_scale, freqs).squeeze()
-    
-    
+
+
 
     # swap source and freq axes and reshape to image shape
     beam_source = np.transpose(beam_image, axes=(1, 0))
     return beam_source.squeeze().reshape((freqs.size, *ll.shape))
 
 
-def create_parser():
-    p = argparse.ArgumentParser(description='Beam intrepolation tool.',
+def power_beam_maker():
+    parser = argparse.ArgumentParser(description='Beam intrepolation tool.',
                                 formatter_class=argparse.RawTextHelpFormatter)
-    p.add_argument('-image', "--image", type=str, required=True)
-    p.add_argument('-ms', "--ms", nargs="+", type=str, 
-                   help="Mesurement sets used to make the image. \n"
-                   "Used to get paralactic angles if doing primary beam correction")
-    p.add_argument('-f', "--field", type=int, default=0,
-                   help="Field ID")
-    p.add_argument('-o', '--output-filename', type=str,
-                   help="Path to output directory. \n"
-                        "Placed next to input model if outfile not provided.")
-    p.add_argument('-bm', '--beam-model', default=None, type=str,
+    parser.add_argument('-image', "--image", type=str, required=True)
+    parser.add_argument('-ms', "--ms", nargs="+", type=str,
+                        help="Mesurement sets used to make the image. \n"
+                        "Used to get paralactic angles if doing primary beam correction")
+    parser.add_argument('-f', "--field", type=int, default=0,
+                        help="Field ID")
+    parser.add_argument('-o', '--output-filename', type=str, required=True,
+                        help="Path to output directory.")
+    parser.add_argument('-bm', '--beam-model', default=None, type=str,
                    help="Fits beam model to use. \n"
                         "It is assumed that the pattern is path_to_beam/"
                         "name_corr_re/im.fits. \n"
@@ -258,18 +260,30 @@ def create_parser():
                         "automatically. \n"
                         "Only real and imaginary beam models currently "
                         "supported.")
-    p.add_argument('-st', "--sparsify-time", type=int, default=10,
+    parser.add_argument('-st', "--sparsify-time", type=int, default=10,
                    help="Used to select a subset of time ")
-    p.add_argument('-ncpu', '--ncpu', default=0, type=int,
+    parser.add_argument('-ncpu', '--ncpu', default=0, type=int,
                    help="Number of threads to use. \n"
                         "Default of zero means use all threads")
-    p.add_argument('-ct', '--corr-type', type=str, default='linear',
+    parser.add_argument('-ct', '--corr-type', type=str, default='linear',
                    help="Correlation typ i.e. linear or circular. ")
-    return p
 
-def main(args):
+    opts = parser.parse_args()
+    opts = OmegaConf.create(opts)
+    pyscilog.log_to_file(f'binterp.log')
+
+    if not opts.nthreads:
+        import multiprocessing
+        opts.nthreads = multiprocessing.cpu_count()
+
+    OmegaConf.set_struct(opts, True)
+
+    print('Input Options:', file=log)
+    for key in opts.keys():
+        print('     %25s = %s' % (key, opts[key]), file=log)
+
     # get coord info
-    hdr = fits.getheader(args.image)
+    hdr = fits.getheader(opts.image)
     l_coord, ref_l = data_from_header(hdr, axis=1)
     l_coord -= ref_l
     m_coord, ref_m = data_from_header(hdr, axis=2)
@@ -281,40 +295,16 @@ def main(args):
     else:
         raise ValueError("Freq axis must be 3rd or 4th")
     freqs, ref_freq = data_from_header(hdr, axis=freq_axis)
-    
+
     xx, yy = np.meshgrid(l_coord, m_coord, indexing='ij')
-    
+
     # interpolate primary beam to fits header and optionally average over time
-    beam_image = interpolate_beam(xx, yy, freqs, args)
+    beam_image = interpolate_beam(xx, yy, freqs, opts)
 
 
     # save power beam
-    save_fits(args.output_filename, beam_image, hdr)
-    print("Wrote interpolated beam cube to %s \n" % args.output_filename)
+    save_fits(opts.output_filename, beam_image, hdr)
+    print("Wrote interpolated beam cube to %s \n" % opts.output_filename, file=log)
 
 
     return
-
-if __name__ == "__main__":
-    args = create_parser().parse_args()
-
-    if args.ncpu:
-        from multiprocessing.pool import ThreadPool
-        dask.config.set(pool=ThreadPool(args.ncpu))
-    else:
-        import multiprocessing
-        args.ncpu = multiprocessing.cpu_count()
-
-    print(' \n ')
-    GD = vars(args)
-    print('Input Options:')
-    for key in GD.keys():
-        print(key, ' = ', GD[key])
-
-    print(' \n ')
-
-    print("Using %i threads" % args.ncpu)
-
-    print(' \n ')
-
-    main(args)

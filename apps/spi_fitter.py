@@ -4,7 +4,7 @@
 
 import pyscilog
 pyscilog.init('spimple')
-log = pyscilog.get_logger('IMAGE_CONVOLVER')
+log = pyscilog.get_logger('SPIFIT')
 import argparse
 from omegaconf import OmegaConf
 import numpy as np
@@ -94,7 +94,7 @@ def spi_fitter():
 
     opts = parser.parse_args()
     opts = OmegaConf.create(opts)
-    pyscilog.log_to_file(f'image_convolver.log')
+    pyscilog.log_to_file(f'spifit.log')
 
     if not opts.nthreads:
         import multiprocessing

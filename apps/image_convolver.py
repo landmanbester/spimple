@@ -3,7 +3,7 @@
 # flake8: noqa
 import pyscilog
 pyscilog.init('spimple')
-log = pyscilog.get_logger('IMAGE_CONVOLVER')
+log = pyscilog.get_logger('IMCONV')
 import argparse
 from omegaconf import OmegaConf
 import numpy as np
