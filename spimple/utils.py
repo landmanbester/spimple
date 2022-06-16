@@ -9,6 +9,16 @@ from africanus.rime.fast_beam_cubes import beam_cube_dde
 from africanus.rime import parallactic_angles
 from africanus.util.numba import jit
 
+def str2bool(v):
+    if isinstance(v, bool):
+        return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        import argparse
+        raise argparse.ArgumentTypeError('Boolean value expected.')
 
 def to4d(data):
     if data.ndim == 4:
