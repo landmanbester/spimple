@@ -32,12 +32,16 @@ def image_convolver():
                         help="Fits beam model to use. \n"
                         "Use power_beam_maker to make power beam "
                         "corresponding to image. ")
+    parser.add_argument('-band', "--band", type=str, default='l',
+                        help="Band to use with JimBeam. L or UHF")
     parser.add_argument('-pb-min', '--pb-min', type=float, default=0.05,
                         help="Set image to zero where pb falls below this value")
     parser.add_argument('-pf', '--padding-frac', type=float, default=0.5,
                         help="Padding fraction for FFTs (half on either side)")
+    parser.add_argument('-otype', '--out_dtype', default='f4', type=str,
+                        help="Data type of output. Default is single precision")
     opts = parser.parse_args()
-    opts = OmegaConf.create(opts)
+    opts = OmegaConf.create(vars(opts))
     pyscilog.log_to_file(f'image_convolver.log')
 
     if not opts.nthreads:
@@ -122,29 +126,44 @@ def image_convolver():
         imagei = imagei[None, :, :]
     if imagei.ndim != 3:
         raise ValueError("Unsupported number of image dimensions")
-    image, gausskern = convolve2gaussres(imagei, xx, yy, gaussparf, opts.ncpu, gausspari, opts.padding_frac)
+    print('Convolving image', file=log)
+    image, gausskern = convolve2gaussres(imagei, xx, yy, gaussparf,
+                                         opts.nthreads, gausspari,
+                                         opts.padding_frac)
 
     # load beam and correct
     if opts.beam_model is not None:
-        bhdr = fits.getheader(opts.beam_model)
-        l_coord_beam, ref_lb = data_from_header(bhdr, axis=1)
-        l_coord_beam -= ref_lb
-        if not np.array_equal(l_coord_beam, l_coord):
-            raise ValueError("l coordinates of beam model do not match those of image. "
-                             "Use power_beam_maker to interpolate to fits header.")
+        if opts.beam_model.endswith('.fits'):
+            bhdr = fits.getheader(opts.beam_model)
+            l_coord_beam, ref_lb = data_from_header(bhdr, axis=1)
+            l_coord_beam -= ref_lb
+            if not np.array_equal(l_coord_beam, l_coord):
+                raise ValueError("l coordinates of beam model do not match those of image. "
+                                "Use power_beam_maker to interpolate to fits header.")
 
-        m_coord_beam, ref_mb = data_from_header(bhdr, axis=2)
-        m_coord_beam -= ref_mb
-        if not np.array_equal(m_coord_beam, m_coord):
-            raise ValueError("m coordinates of beam model do not match those of image. "
-                             "Use power_beam_maker to interpolate to fits header.")
+            m_coord_beam, ref_mb = data_from_header(bhdr, axis=2)
+            m_coord_beam -= ref_mb
+            if not np.array_equal(m_coord_beam, m_coord):
+                raise ValueError("m coordinates of beam model do not match those of image. "
+                                "Use power_beam_maker to interpolate to fits header.")
 
-        freqs_beam, _ = data_from_header(bhdr, axis=freq_axis)
-        if not np.array_equal(freqs, freqs_beam):
-            raise ValueError("Freqs of beam model do not match those of image. "
-                             "Use power_beam_maker to interpolate to fits header.")
+            freqs_beam, _ = data_from_header(bhdr, axis=freq_axis)
+            if not np.array_equal(freqs, freqs_beam):
+                raise ValueError("Freqs of beam model do not match those of image. "
+                                "Use power_beam_maker to interpolate to fits header.")
 
-        beam_image = load_fits(opts.beam_model, dtype=np.float32).squeeze()
+            beam_image = load_fits(opts.beam_model, dtype=np.float32).squeeze()
+        elif opts.beam_model == "JimBeam":
+            from katbeam import JimBeam
+            if opts.band.lower() == 'l':
+                beam = JimBeam('MKAT-AA-L-JIM-2020')
+            else:
+                beam = JimBeam('MKAT-AA-UHF-JIM-2020')
+            beam_image = np.zeros(image.shape, dtype=opts.out_dtype)
+            for v in range(freqs.size):
+                beam_image[v] = beam.I(xx, yy, freqs[v]/1e6)  # freqs in MHz
+        else:
+            raise ValueError(f"Unknown beam model {opts.beam_model}")
 
         image = np.where(beam_image >= opts.pb_min, image/beam_image, 0.0)
 
@@ -153,11 +172,11 @@ def image_convolver():
 
     # save images
     name = outfile + '.clean_psf.fits'
-    save_fits(name, gausskern, hdr)
+    save_fits(name, gausskern, hdr, dtype=opts.out_dtype)
     print(f"Wrote clean psf to {name}", file=log)
 
     name = outfile + '.convolved.fits'
-    save_fits(name, image, hdr)
-    print(f"Wrote convolved model to {name}", file=log)
+    save_fits(name, image, hdr, dtype=opts.out_dtype)
+    print(f"Wrote convolved image to {name}", file=log)
 
     print("All done here", file=log)

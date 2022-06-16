@@ -38,7 +38,7 @@ def spi_fitter():
                         help="Maximum dynamic range used to determine the "
                         "threshold above which components need to be fit. \n"
                         "Only used if residual is not passed in.")
-    parser.add_argument('-ncpu', '--ncpu', default=0, type=int,
+    parser.add_argument('-nthreads', '--nthreads', default=0, type=int,
                         help="Number of threads to use. \n"
                         "Default of zero means use all threads")
     parser.add_argument('-pb-min', '--pb-min', type=float, default=0.15,
@@ -93,7 +93,7 @@ def spi_fitter():
                         help="Band to use with JimBeam. L or UHF")
 
     opts = parser.parse_args()
-    opts = OmegaConf.create(opts)
+    opts = OmegaConf.create(vars(opts))
     pyscilog.log_to_file(f'spifit.log')
 
     if not opts.nthreads:
@@ -192,20 +192,14 @@ def spi_fitter():
     new_hdr = set_header_info(mhdr, ref_freq, freq_axis, opts, gaussparf)
 
     # save next to model if no outfile is provided
-    if opts.output_filename is None:
-        # strip .fits from model filename
-        tmp = opts.model[::-1]
-        idx = tmp.find('.')
-        outfile = opts.model[0:-(idx+1)]
-    else:
-        outfile = opts.output_filename
+    outfile = opts.output_filename
 
     xx, yy = np.meshgrid(l_coord, m_coord, indexing='ij')
 
     # load beam
     if opts.beam_model is not None:
         # we can pass in either a fits file with the already interpolated beam or we can interpolate from scratch
-        if opts.beam_model[-5:] == '.fits':
+        if opts.beam_model.endswith('.fits'):
             bhdr = fits.getheader(opts.beam_model)
             l_coord_beam, ref_lb = data_from_header(bhdr, axis=1)
             l_coord_beam -= ref_lb
@@ -252,7 +246,7 @@ def spi_fitter():
     if not opts.dont_convolve:
         print("Convolving model", file=log)
         # convolve model to desired resolution
-        model, gausskern = convolve2gaussres(model, xx, yy, gaussparf, opts.ncpu, None, opts.padding_frac)
+        model, gausskern = convolve2gaussres(model, xx, yy, gaussparf, opts.nthreads, None, opts.padding_frac)
 
         # save clean beam
         if 'c' in opts.products:
@@ -301,7 +295,7 @@ def spi_fitter():
 
         if gausspari is not None and opts.add_convolved_residuals:
             print("Convolving residuals", file=log)
-            resid, _ = convolve2gaussres(resid, xx, yy, gaussparf, opts.ncpu, gausspari, opts.padding_frac, norm_kernel=False)
+            resid, _ = convolve2gaussres(resid, xx, yy, gaussparf, opts.nthreads, gausspari, opts.padding_frac, norm_kernel=False)
             model += resid
             print("Convolved residuals added to convolved model", file=log)
 
@@ -352,9 +346,9 @@ def spi_fitter():
 
     ncomps, _ = fitcube.shape
     fitcube = da.from_array(fitcube.astype(np.float64),
-                            chunks=(ncomps//opts.ncpu, nband))
+                            chunks=(ncomps//opts.nthreads, nband))
     beam_comps = da.from_array(beam_comps.astype(np.float64),
-                               chunks=(ncomps//opts.ncpu, nband))
+                               chunks=(ncomps//opts.nthreads, nband))
     weights = da.from_array(weights.astype(np.float64), chunks=(nband))
     freqsdask = da.from_array(freqs.astype(np.float64), chunks=(nband))
 
