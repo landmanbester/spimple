@@ -33,9 +33,9 @@ setup(
      ],
      entry_points={
                     'console_scripts': [
-                    'spimple-imconv=apps.image_convolver:image_convolver',
-                    'spimple-spifit=apps.spi_fitter:spi_fitter',
-                    'spimple-binterp=apps.power_beam_maker:power_beam_maker'
+                    'spimple-imconv=spimple.apps.image_convolver:image_convolver',
+                    'spimple-spifit=spimple.apps.spi_fitter:spi_fitter',
+                    'spimple-binterp=spimple.apps.power_beam_maker:power_beam_maker'
                     ]
      }
      ,
