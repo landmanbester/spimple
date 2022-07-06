@@ -81,6 +81,11 @@ def set_header_info(mhdr, ref_freq, freq_axis, args, beampars):
 
 
 def Gaussian2D(xin, yin, GaussPar=(1., 1., 0.), normalise=True):
+    if xin.ndim != 2:
+        raise ValueError("Input coordinates must be 2D")
+    if yin.shape != xin.shape:
+        raise ValueError("x and u coordinates must be defined on the same "
+                         "grid")
     S0, S1, PA = GaussPar
     Smaj = np.maximum(S0, S1)
     Smin = np.minimum(S0, S1)
@@ -94,17 +99,13 @@ def Gaussian2D(xin, yin, GaussPar=(1., 1., 0.), normalise=True):
     sOut = xin.shape
     # only compute the result out to 5 * emaj
     extent = (5 * Smaj)**2
-    xflat = xin.squeeze()
-    yflat = yin.squeeze()
-    ind = np.argwhere(xflat**2 + yflat**2 <= extent).squeeze()
-    idx = ind[:, 0]
-    idy = ind[:, 1]
-    x = np.array([xflat[idx, idy].ravel(), yflat[idx, idy].ravel()])
+    idx, idy = np.where(xin**2 + yin**2 <= extent)
+    x = np.array([xin[idx, idy].ravel(), yin[idx, idy].ravel()])
     R = np.einsum('nb,bc,cn->n', x.T, A, x)
     # need to adjust for the fact that GaussPar corresponds to FWHM
     fwhm_conv = 2*np.sqrt(2*np.log(2))
     tmp = np.exp(-fwhm_conv*R)
-    gausskern = np.zeros(xflat.shape, dtype=np.float64)
+    gausskern = np.zeros(xin.shape, dtype=np.float64)
     gausskern[idx, idy] = tmp
 
     if normalise:

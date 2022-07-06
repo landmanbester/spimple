@@ -95,9 +95,25 @@ def image_convolver():
         gaussparf = tuple(opts.psf_pars)
     else:
         if opts.psf_pars is None:
-            gaussparf = gausspari[0]
+            gfi = gausspari[0]
+            gaussparf = list(gfi)
+            # take the largest ones
+            for gp in gausspari:
+                gaussparf[0] = np.maximum(gaussparf[0], gp[0])
+                gaussparf[1] = np.maximum(gaussparf[1], gp[1])
+            gaussparf = tuple(gaussparf)
+            if gaussparf[0] > gfi[0] or gaussparf[1] > gfi[1]:
+                print("Warning - largest clean beam does not correspond to "
+                      "band 0. You may want to consider removing this band.")
         else:
             gaussparf = tuple(opts.psf_pars)
+            for gp in gausspari:
+                if gp[0] > gaussparf[0]:
+                    raise ValueError("Target resolution cannot be smaller "
+                                     "than original. Axis 0")
+                if gp[1] > gaussparf[1]:
+                    raise ValueError("Target resolution cannot be smaller "
+                                     "than original. Axis 1")
 
     if opts.circ_psf:
         e = (gaussparf[0] + gaussparf[1])/2.0
