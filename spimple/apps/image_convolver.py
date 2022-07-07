@@ -116,9 +116,12 @@ def image_convolver():
                                      "than original. Axis 1")
 
     if opts.circ_psf:
-        e = (gaussparf[0] + gaussparf[1])/2.0
+        e = np.maximum(gaussparf[0], gaussparf[1])
+        gaussparf = list(gaussparf)
         gaussparf[0] = e
         gaussparf[1] = e
+        gaussparf[2] = 0.0
+        gaussparf = tuple(gaussparf)
 
     print("Using emaj = %3.2e, emin = %3.2e, PA = %3.2e \n" % gaussparf, file=log)
 
