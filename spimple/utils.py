@@ -153,7 +153,7 @@ def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=
     gausskern = np.pad(gausskern[None], padding, mode='constant')
     gausskernhat = r2c(iFs(gausskern, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
 
-    image = np.pad(image, padding, mode='constant')
+    image = np.pad(image, padding, mode='constant').astype(np.float64)
     imhat = r2c(iFs(image, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
 
     # convolve to desired resolution
@@ -161,11 +161,11 @@ def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=
         imhat *= gausskernhat
     else:
         for i in range(nband):
-            thiskern = Gaussian2D(xx, yy, gausspari[i], normalise=norm_kernel)
+            thiskern = Gaussian2D(xx, yy, gausspari[i], normalise=norm_kernel).astype(np.float64)
             thiskern = np.pad(thiskern[None], padding, mode='constant')
             thiskernhat = r2c(iFs(thiskern, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
 
-            convkernhat = np.where(np.abs(thiskernhat)>0.0, gausskernhat/thiskernhat, 0.0)
+            convkernhat = np.where(np.abs(thiskernhat)>1e-10, gausskernhat/thiskernhat, 0.0)
 
             imhat[i] *= convkernhat[0]
 
