@@ -28,6 +28,9 @@ def image_convolver():
     parser.add_argument('-cp', "--circ-psf", action="store_true",
                         help="Passing this flag will convolve with a circularised "
                         "beam instead of an elliptical one")
+    parser.add_argument('-dilate', '--dilate', default=1.05, type=float,
+                        help='Dilate the psf-pars in fits header by this amount.'
+                        'This is sometimes required for stability.')
     parser.add_argument('-bm', '--beam-model', default=None, type=str,
                         help="Fits beam model to use. \n"
                         "Use power_beam_maker to make power beam "
@@ -87,7 +90,8 @@ def image_convolver():
             gausspari = ((emaj, emin, pa),)
 
     if len(gausspari) == 0 and opts.psf_pars is None:
-        raise ValueError("No psf parameters in fits file and none passed in.", file=log)
+        raise ValueError("No psf parameters in fits file and none passed in.",
+                         file=log)
 
     if len(gausspari) == 0:
         print("No psf parameters in fits file. "
@@ -95,14 +99,34 @@ def image_convolver():
         gaussparf = tuple(opts.psf_pars)
     else:
         if opts.psf_pars is None:
-            gaussparf = gausspari[0]
+            gfi = gausspari[0]
+            gaussparf = list(gfi)
+            # take the largest ones
+            for gp in gausspari:
+                gaussparf[0] = np.maximum(gaussparf[0], gp[0]*opts.dilate)
+                gaussparf[1] = np.maximum(gaussparf[1], gp[1]*opts.dilate)
+            gaussparf = tuple(gaussparf)
+            if gaussparf[0] > gfi[0]*opts.dilate or gaussparf[1] > gfi[1]*opts.dilate:
+                print("Warning - largest clean beam does not correspond to "
+                      "band 0. You may want to consider removing such bands.",
+                      file=log)
         else:
             gaussparf = tuple(opts.psf_pars)
+            for gp in gausspari:
+                if gp[0] > gaussparf[0]:
+                    raise ValueError("Target resolution cannot be smaller "
+                                     "than original. Axis 0")
+                if gp[1] > gaussparf[1]:
+                    raise ValueError("Target resolution cannot be smaller "
+                                     "than original. Axis 1")
 
     if opts.circ_psf:
-        e = (gaussparf[0] + gaussparf[1])/2.0
-        gaussparf[0] = e
-        gaussparf[1] = e
+        e = np.maximum(gaussparf[0], gaussparf[1])
+        gaussparf = list(gaussparf)
+        gaussparf[0] = 1.05*e
+        gaussparf[1] = 1.05*e
+        gaussparf[2] = 0.0
+        gaussparf = tuple(gaussparf)
 
     print("Using emaj = %3.2e, emin = %3.2e, PA = %3.2e \n" % gaussparf, file=log)
 
