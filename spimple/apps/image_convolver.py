@@ -104,7 +104,7 @@ def image_convolver():
             gaussparf = tuple(gaussparf)
             if gaussparf[0] > gfi[0] or gaussparf[1] > gfi[1]:
                 print("Warning - largest clean beam does not correspond to "
-                      "band 0. You may want to consider removing this band.")
+                      "band 0. You may want to consider removing such bands.")
         else:
             gaussparf = tuple(opts.psf_pars)
             for gp in gausspari:
