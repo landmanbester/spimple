@@ -90,7 +90,9 @@ optional arguments:
 The ```spimple-imconv``` executable convolves images to a common resolution
 and optionally performs a primary beam correction. Usage is as follows:
 ```
-usage: spimple-imconv [-h] -image IMAGE -o OUTPUT_FILENAME [-pp PSF_PARS [PSF_PARS ...]] [-nthreads NTHREADS] [-cp] [-bm BEAM_MODEL] [-band BAND] [-pb-min PB_MIN] [-pf PADDING_FRAC] [-otype OUT_DTYPE]
+usage: spimple-imconv [-h] -image IMAGE -o OUTPUT_FILENAME [-pp PSF_PARS [PSF_PARS ...]] [-nthreads NTHREADS] [-cp]
+                      [-dilate DILATE] [-bm BEAM_MODEL] [-band BAND] [-pb-min PB_MIN] [-pf PADDING_FRAC]
+                      [-otype OUT_DTYPE]
 
 Convolve images to a common resolution.
 
@@ -106,6 +108,8 @@ optional arguments:
                         Number of threads to use.
                         Default of zero means use all threads
   -cp, --circ-psf       Passing this flag will convolve with a circularised beam instead of an elliptical one
+  -dilate DILATE, --dilate DILATE
+                        Dilate the psf-pars in fits header by this amount.This is sometimes required for stability.
   -bm BEAM_MODEL, --beam-model BEAM_MODEL
                         Fits beam model to use.
                         Use power_beam_maker to make power beam corresponding to image.
