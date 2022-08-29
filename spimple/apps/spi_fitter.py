@@ -331,17 +331,24 @@ def spi_fitter():
     beam_comps = beam_image[:, maskindices[:, 0], maskindices[:, 1]].T
 
     # set weights for fit
-    if rms_cube is not None:
-        print("Using RMS in each imaging band to determine weights.", file=log)
-        weights = np.where(rms_cube > 0, 1.0/rms_cube**2, 0.0)
-        # normalise
-        weights /= weights.max()
-    else:
-        if opts.channel_weights is not None:
-            weights = np.array(opts.channel_weights)
+    if opts.channel_weights is not None:
+        weights = np.array(opts.channel_weights)
+        try:
+            assert weights.size == nband
             print("Using provided channel weights.", file=log)
+        except Exception as e:
+            print("Number of provided channel weights not equal "
+                  "to number of imaging bands", file=log)
+    else:
+        if rms_cube is not None:
+            print("Using RMS in each imaging band to determine weights.",
+                  file=log)
+            weights = np.where(rms_cube > 0, 1.0/rms_cube**2, 0.0)
+            # normalise
+            weights /= weights.max()
         else:
-            print("No residual or channel weights provided. Using equal weights.", file=log)
+            print("No residual or channel weights provided. "
+                  "Using equal weights.", file=log)
             weights = np.ones(nband, dtype=np.float64)
 
     ncomps, _ = fitcube.shape
@@ -352,7 +359,7 @@ def spi_fitter():
     weights = da.from_array(weights.astype(np.float64), chunks=(nband))
     freqsdask = da.from_array(freqs.astype(np.float64), chunks=(nband))
 
-    print("Fitting {ncomps} components", file=log)
+    print(f"Fitting {ncomps} components", file=log)
     alpha, alpha_err, Iref, i0_err = fit_spi_components(fitcube, weights, freqsdask,
                                         np.float64(ref_freq), beam=beam_comps).compute()
     print("Done. Writing output.", file=log)
