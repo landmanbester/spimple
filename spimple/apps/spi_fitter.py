@@ -63,6 +63,8 @@ def spi_fitter():
     parser.add_argument('-cw', "--channel_weights", default=None, nargs='+', type=float,
                         help="Per-channel weights to use during fit to frequency axis. \n "
                         "Only has an effect if no residual is passed in (for now).")
+    parser.add_argument('-cf', "--channel_freqs", default=None, nargs='+', type=float,
+                        help="Per-channel freqs to use during fit to frequency axis")
     parser.add_argument('-rf', '--ref-freq', default=None, type=np.float64,
                         help='Reference frequency where the I0 map is sought. \n'
                         "Will overwrite in fits headers of output.")
@@ -152,6 +154,7 @@ def spi_fitter():
     l_coord -= ref_l
     m_coord, ref_m = data_from_header(mhdr, axis=2)
     m_coord -= ref_m
+
     if mhdr["CTYPE4"].lower() == 'freq':
         freq_axis = 4
         stokes_axis = 3
@@ -164,7 +167,9 @@ def spi_fitter():
     mfs_shape = list(orig_shape)
     mfs_shape[0] = 1
     mfs_shape = tuple(mfs_shape)
+
     freqs, ref_freq = data_from_header(mhdr, axis=freq_axis)
+    freqs = np.array(opts.channel_freqs) if opts.channel_freqs is not None else freqs
 
     nband = freqs.size
     if nband < 2:
@@ -276,6 +281,7 @@ def spi_fitter():
             raise ValueError("m coordinates of residual do not match those of model")
 
         freqs_res, _ = data_from_header(rhdr, axis=freq_axis)
+        freqs_res = freqs if opts.channel_freqs else freqs_res
         if not np.array_equal(freqs, freqs_res):
             raise ValueError("Freqs of residual do not match those of model")
 
