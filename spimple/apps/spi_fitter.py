@@ -64,7 +64,9 @@ def spi_fitter():
                         help="Per-channel weights to use during fit to frequency axis. \n "
                         "Only has an effect if no residual is passed in (for now).")
     parser.add_argument('-cf', "--channel_freqs", default=None, nargs='+', type=float,
-                        help="Per-channel freqs to use during fit to frequency axis")
+                        help="Per-channel freqs to use during fit to frequency axis\n"+
+                        "These are automatically generated from the FITS header.\n"+
+                        "Only specify if you have a non-standard FITS header.")
     parser.add_argument('-rf', '--ref-freq', default=None, type=np.float64,
                         help='Reference frequency where the I0 map is sought. \n'
                         "Will overwrite in fits headers of output.")
