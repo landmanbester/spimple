@@ -300,7 +300,9 @@ def spi_fitter():
                 res_freqs.extend(data_from_header(fits.getheader(res), axis=freq_axis)[0])
                 rhdr.append(fits.getheader(res))
             resid = np.stack(residuals).squeeze()
+            freqs_res = np.array(res_freqs)
         else:
+            freqs_res, _ = data_from_header(fits.getheader(residual), axis=freq_axis)
             resid = load_fits(residual, dtype=opts.out_dtype).squeeze()
             rhdr.append(fits.getheader(residual))
 
@@ -314,7 +316,6 @@ def spi_fitter():
         if not np.array_equal(m_res, m_coord):
             raise ValueError("m coordinates of residual do not match those of model")
 
-        freqs_res = np.array(res_freqs)
         freqs_res = freqs if opts.channel_freqs else freqs_res
         if not np.array_equal(freqs, freqs_res):
             raise ValueError("Freqs of residual do not match those of model")
@@ -332,13 +333,13 @@ def spi_fitter():
                     gausspari += ((emaj, emin, pa),)
         # residual cube is provides Gausspar as BMAJ1, BMAJ2,...
         else:
-            rhdr = rhdr[0]
+            hdr = rhdr[0]
             for i in range(1,nband+1):
                 key = 'BMAJ' + str(i)
-                if key in rhdr.keys():
-                    emaj = rhdr[key]
-                    emin = rhdr['BMIN' + str(i)]
-                    pa = rhdr['BPA' + str(i)]
+                if key in hdr.keys():
+                    emaj = hdr[key]
+                    emin = hdr['BMIN' + str(i)]
+                    pa = hdr['BPA' + str(i)]
                     gausspari += ((emaj, emin, pa),)
         if gausspari:
             print(f"Gausspars in residual header: {gausspari}", file=log)
