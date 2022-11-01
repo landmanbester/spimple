@@ -322,16 +322,14 @@ def spi_fitter():
 
         # convolve residual to same resolution as model
         gausspari = ()
-        # get beam values from individual headers from than one residuals
+        # get beam values from individual headers
         if len(rhdr) > 1:
             for hdr in rhdr:
-                key = 'BMAJ'
-                if key in hdr:
-                    emaj = hdr[key]
-                    emin = hdr['BMIN']
-                    pa = hdr['BPA']
-                    gausspari += ((emaj, emin, pa),)
-        # residual cube is provides Gausspar as BMAJ1, BMAJ2,...
+                keys = ['BMAJ', 'BMIN', 'BPA']
+                if all(k in hdr for k in keys):
+                    emaj, emin, pa = [hdr[k] for k in keys]
+                    gausspari += tuple([hdr[k] for k in keys]),
+        # residual cube provides beam params as BMAJ1, BMAJ2,...
         else:
             hdr = rhdr[0]
             for i in range(1,nband+1):
@@ -394,7 +392,11 @@ def spi_fitter():
             print("Number of provided channel weights not equal "
                   "to number of imaging bands", file=log)
     else:
-        if rms_cube is not None:
+        if len(rhdr) > 1:
+            print("Getting weights from list of image headers.", file=log)
+            weights = np.array([hdr["WSCVWSUM"] for hdr in rhdr])
+            weights /= weights.max()
+        elif rms_cube is not None:
             print("Using RMS in each imaging band to determine weights.",
                   file=log)
             weights = np.where(rms_cube > 0, 1.0/rms_cube**2, 0.0)
@@ -404,6 +406,7 @@ def spi_fitter():
             print("No residual or channel weights provided. "
                   "Using equal weights.", file=log)
             weights = np.ones(nband, dtype=np.float64)
+        print(f"Channel weights: {weights}", file=log)
 
     ncomps, _ = fitcube.shape
     fitcube = da.from_array(fitcube.astype(np.float64),
