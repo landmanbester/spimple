@@ -287,38 +287,26 @@ def spi_fitter():
 
 
     # add in residuals and set threshold
-    residual = opts.residual[0]
-    res_freqs = []
-    rhdr = []
-    if residual is not None:
-        # if more than one residuals are provided
-        # get headers and frequencies from individual images
-        if len(opts.residual) > 1:
-            residuals = []
-            for res in opts.residual:
-                residuals.append(load_fits(res, dtype=opts.out_dtype))
-                res_freqs.extend(data_from_header(fits.getheader(res), axis=freq_axis)[0])
-                rhdr.append(fits.getheader(res))
-            resid = np.stack(residuals).squeeze()
-            freqs_res = np.array(res_freqs)
-        else:
-            freqs_res, _ = data_from_header(fits.getheader(residual), axis=freq_axis)
-            resid = load_fits(residual, dtype=opts.out_dtype).squeeze()
-            rhdr.append(fits.getheader(residual))
+    if opts.residual:
+        # get headers and frequencies from residual image(s)
+        residuals = [load_fits(res, dtype=opts.out_dtype) for res in opts.residual]
+        resid = np.stack(residuals).squeeze()
+        rhdr = [fits.getheader(res) for res in opts.residual]
+        freqs_res = np.array([data_from_header(fits.getheader(res), axis=freq_axis)[0]
+                              for res in opts.residual]).flatten()
+        freqs_res = freqs if opts.channel_freqs else freqs_res
+        if not np.array_equal(freqs, freqs_res):
+            raise ValueError("Freqs of residual do not match those of model")
 
+        # get l and m coordinate from residual image(s)
         l_res, ref_lb = data_from_header(rhdr[0], axis=1)
         l_res -= ref_lb
         if not np.array_equal(l_res, l_coord):
             raise ValueError("l coordinates of residual do not match those of model")
-
         m_res, ref_mb = data_from_header(rhdr[0], axis=2)
         m_res -= ref_mb
         if not np.array_equal(m_res, m_coord):
             raise ValueError("m coordinates of residual do not match those of model")
-
-        freqs_res = freqs if opts.channel_freqs else freqs_res
-        if not np.array_equal(freqs, freqs_res):
-            raise ValueError("Freqs of residual do not match those of model")
 
         # convolve residual to same resolution as model
         gausspari = ()
@@ -392,8 +380,9 @@ def spi_fitter():
             print("Number of provided channel weights not equal "
                   "to number of imaging bands", file=log)
     else:
-        if len(rhdr) > 1:
+        if len(opts.residual) > 1:
             print("Getting weights from list of image headers.", file=log)
+            rhdr = [fits.getheader(res) for res in opts.residual]
             weights = np.array([hdr["WSCVWSUM"] for hdr in rhdr])
             weights /= weights.max()
         elif rms_cube is not None:
