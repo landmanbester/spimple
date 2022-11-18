@@ -18,8 +18,8 @@ from africanus.model.spi.dask import fit_spi_components
 def spi_fitter():
     parser = argparse.ArgumentParser(description='Simple spectral index fitting tool.',
                                 formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-model', "--model", type=str)
-    parser.add_argument('-residual', "--residual", type=str)
+    parser.add_argument('-model', "--model", type=str, nargs='+')
+    parser.add_argument('-residual', "--residual", type=str, nargs='+')
     parser.add_argument('-o', '--output-filename', type=str, required=True,
                         help="Path to output directory + prefix.")
     parser.add_argument('-pp', '--psf-pars', default=None, nargs='+', type=float,
@@ -113,10 +113,10 @@ def spi_fitter():
     if opts.psf_pars is None:
         print("Attempting to take psf_pars from residual/image fits header", file=log)
         try:
-            rhdr = fits.getheader(opts.residual)
+            rhdr = fits.getheader(opts.residual[0])
         except Exception as e:
             try:
-                rhdr = fits.getheader(opts.model)
+                rhdr = fits.getheader(opts.model[0])
             except Exception as e:
                 raise e
 
@@ -147,10 +147,13 @@ def spi_fitter():
 
     print("Using emaj = %3.2e, emin = %3.2e, PA = %3.2e \n" % gaussparf, file=log)
 
-    # load model image
-    model = load_fits(opts.model, dtype=opts.out_dtype).squeeze()
-    orig_shape = model.shape
-    mhdr = fits.getheader(opts.model)
+    # load model images or cube
+    model_header = {}
+    for i, m in enumerate(opts.model):
+        model = load_fits(m, dtype=opts.out_dtype).squeeze()
+        orig_shape = model.shape
+        mhdr = fits.getheader(m)
+        model_header[i] = [model, mhdr]
 
     l_coord, ref_l = data_from_header(mhdr, axis=1)
     l_coord -= ref_l
@@ -170,9 +173,25 @@ def spi_fitter():
     mfs_shape[0] = 1
     mfs_shape = tuple(mfs_shape)
 
-    freqs, ref_freq = data_from_header(mhdr, axis=freq_axis)
+    # generate model frequencies and model slices
+    # incase one/more than one frequency models are provided
+    freqs = []
+    models_data = []
+    for model_data, model_hdr in model_header.values():
+        mhdr = model_hdr
+        freq, ref_freq = data_from_header(mhdr, axis=freq_axis)
+        freqs.extend(freq)
+        # for 3d (cubes) image seperate individual frequency model
+        # to stack later with the rest
+        if len(model_data.shape) > 2:
+            for md in model_data:
+                models_data.append(md)
+        else:
+            models_data.append(model_data)
+    # stack model data cube
+    model = np.stack(models_data)
+    freqs = np.array(freqs)  # convert list to array
     freqs = np.array(opts.channel_freqs) if opts.channel_freqs is not None else freqs
-
     nband = freqs.size
     if nband < 2:
         raise ValueError("Can't produce alpha map from a single band image")
@@ -202,7 +221,6 @@ def spi_fitter():
     outfile = opts.output_filename
 
     xx, yy = np.meshgrid(l_coord, m_coord, indexing='ij')
-
     # load beam
     if opts.beam_model is not None:
         # we can pass in either a fits file with the already interpolated beam or we can interpolate from scratch
@@ -269,37 +287,51 @@ def spi_fitter():
 
 
     # add in residuals and set threshold
-    if opts.residual is not None:
-        resid = load_fits(opts.residual, dtype=opts.out_dtype).squeeze()
-        rhdr = fits.getheader(opts.residual)
-        l_res, ref_lb = data_from_header(rhdr, axis=1)
-        l_res -= ref_lb
-        if not np.array_equal(l_res, l_coord):
-            raise ValueError("l coordinates of residual do not match those of model")
-
-        m_res, ref_mb = data_from_header(rhdr, axis=2)
-        m_res -= ref_mb
-        if not np.array_equal(m_res, m_coord):
-            raise ValueError("m coordinates of residual do not match those of model")
-
-        freqs_res, _ = data_from_header(rhdr, axis=freq_axis)
+    if opts.residual:
+        # get headers and frequencies from residual image(s)
+        residuals = [load_fits(res, dtype=opts.out_dtype) for res in opts.residual]
+        resid = np.stack(residuals).squeeze()
+        rhdr = [fits.getheader(res) for res in opts.residual]
+        freqs_res = np.array([data_from_header(fits.getheader(res), axis=freq_axis)[0]
+                              for res in opts.residual]).flatten()
         freqs_res = freqs if opts.channel_freqs else freqs_res
         if not np.array_equal(freqs, freqs_res):
             raise ValueError("Freqs of residual do not match those of model")
 
+        # get l and m coordinate from residual image(s)
+        l_res, ref_lb = data_from_header(rhdr[0], axis=1)
+        l_res -= ref_lb
+        if not np.array_equal(l_res, l_coord):
+            raise ValueError("l coordinates of residual do not match those of model")
+        m_res, ref_mb = data_from_header(rhdr[0], axis=2)
+        m_res -= ref_mb
+        if not np.array_equal(m_res, m_coord):
+            raise ValueError("m coordinates of residual do not match those of model")
+
         # convolve residual to same resolution as model
         gausspari = ()
-        for i in range(1,nband+1):
-            key = 'BMAJ' + str(i)
-            if key in rhdr.keys():
-                emaj = rhdr[key]
-                emin = rhdr['BMIN' + str(i)]
-                pa = rhdr['BPA' + str(i)]
-                gausspari += ((emaj, emin, pa),)
-            else:
-                print("Can't find Gausspars in residual header, unable to add residuals back in", file=log)
-                gausspari = None
-                break
+        # get beam values from individual headers
+        if len(rhdr) > 1:
+            for hdr in rhdr:
+                keys = ['BMAJ', 'BMIN', 'BPA']
+                if all(k in hdr for k in keys):
+                    emaj, emin, pa = [hdr[k] for k in keys]
+                    gausspari += tuple([hdr[k] for k in keys]),
+        # residual cube provides beam params as BMAJ1, BMAJ2,...
+        else:
+            hdr = rhdr[0]
+            for i in range(1,nband+1):
+                key = 'BMAJ' + str(i)
+                if key in hdr.keys():
+                    emaj = hdr[key]
+                    emin = hdr['BMIN' + str(i)]
+                    pa = hdr['BPA' + str(i)]
+                    gausspari += ((emaj, emin, pa),)
+        if gausspari:
+            print(f"Gausspars in residual header: {gausspari}", file=log)
+        else:
+            print("Can't find Gausspars in residual header, unable to add residuals back in", file=log)
+            gausspari = None
 
         if gausspari is not None and opts.add_convolved_residuals:
             print("Convolving residuals", file=log)
@@ -309,7 +341,7 @@ def spi_fitter():
 
             if 'r' in opts.products:
                 name = outfile + '.convolved_residual.fits'
-                save_fits(name, resid, rhdr)
+                save_fits(name, resid, rhdr[0])
                 print(f"Wrote convolved residuals to {name}", file=log)
 
         counts = np.sum(resid != 0)
@@ -348,7 +380,12 @@ def spi_fitter():
             print("Number of provided channel weights not equal "
                   "to number of imaging bands", file=log)
     else:
-        if rms_cube is not None:
+        if len(opts.residual) > 1:
+            print("Getting weights from list of image headers.", file=log)
+            rhdr = [fits.getheader(res) for res in opts.residual]
+            weights = np.array([hdr["WSCVWSUM"] for hdr in rhdr])
+            weights /= weights.max()
+        elif rms_cube is not None:
             print("Using RMS in each imaging band to determine weights.",
                   file=log)
             weights = np.where(rms_cube > 0, 1.0/rms_cube**2, 0.0)
@@ -358,6 +395,7 @@ def spi_fitter():
             print("No residual or channel weights provided. "
                   "Using equal weights.", file=log)
             weights = np.ones(nband, dtype=np.float64)
+        print(f"Channel weights: {weights}", file=log)
 
     ncomps, _ = fitcube.shape
     fitcube = da.from_array(fitcube.astype(np.float64),
