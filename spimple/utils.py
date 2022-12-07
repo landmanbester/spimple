@@ -89,8 +89,16 @@ def Gaussian2D(xin, yin, GaussPar=(1., 1., 0.), normalise=True):
     S0, S1, PA = GaussPar
     Smaj = np.maximum(S0, S1)
     Smin = np.minimum(S0, S1)
-    A = np.array([[1. / Smin ** 2, 0],
+
+    # hackaround for runtime warning
+    if 0 in (Smaj, Smin):
+        print("Nan values have been encountered. Subverting RuntimeWarning")
+        A =  np.array([[np.nan, 0],
+                  [0, np.nan]])
+    else:
+        A = np.array([[1. / Smin ** 2, 0],
                   [0, 1. / Smaj ** 2]])
+           
 
     c, s, t = np.cos, np.sin, np.deg2rad(-PA)
     R = np.array([[c(t), -s(t)],
@@ -165,7 +173,11 @@ def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=
             thiskern = np.pad(thiskern[None], padding, mode='constant')
             thiskernhat = r2c(iFs(thiskern, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
 
-            convkernhat = np.where(np.abs(thiskernhat)>1e-10, gausskernhat/thiskernhat, 0.0)
+            if not np.all(np.isnan(thiskernhat)):
+                convkernhat = np.where(np.abs(thiskernhat)>1e-10, gausskernhat/thiskernhat, 0.0)
+            else:
+                print("Nan values have been encountered. Subverting RuntimeWarning")
+                convkernhat = np.zeros_like(thiskernhat).astype("complex")
 
             imhat[i] *= convkernhat[0]
 
