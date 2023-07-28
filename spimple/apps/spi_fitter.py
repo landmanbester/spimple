@@ -354,7 +354,8 @@ def spi_fitter():
     else:
         print("No residual provided. Setting  threshold i.t.o dynamic range. "
               f"Max dynamic range is {opts.maxDR}", file=log)
-        threshold = model.max()/opts.maxDR
+        mask = ~np.isnan(model)
+        threshold = model[mask].max()/opts.maxDR
         rms_cube = None
 
     print(f"Threshold set to {threshold} Jy.", file=log)
