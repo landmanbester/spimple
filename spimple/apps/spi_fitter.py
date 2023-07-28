@@ -72,7 +72,7 @@ def spi_fitter():
                         "Will overwrite in fits headers of output.")
     parser.add_argument('-otype', '--out_dtype', default='f4', type=str,
                         help="Data type of output. Default is single precision")
-    parser.add_argument('-acr', '--add-convolved-residuals', type=str2bool, nargs='?', const=True, default=True,
+    parser.add_argument('-acr', '--add-convolved-residuals', type=str2bool, nargs='?', const=True, default=False,
                         help='Flag to add in the convolved residuals before fitting components')
     parser.add_argument('-ms', "--ms", nargs="+", type=str,
                         help="Mesurement sets used to make the image. \n"
