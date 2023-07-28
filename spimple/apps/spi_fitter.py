@@ -359,6 +359,19 @@ def spi_fitter():
 
     print(f"Threshold set to {threshold} Jy.", file=log)
 
+    # remove completely nan slices
+    freq_mask = np.isnan(model)
+    fidx = ~np.all(freq_mask, axis=(1,2))
+    if fidx.any():
+        model = model[fidx]
+        beam_image = beam_image[fidx]
+        freqs = fresq[fidx]
+        gaussparf = list(gaussparf)
+        for i, par in enumerate(gaussparf):
+            if idx[i]:
+                gaussparf.remove(par)
+        new_hdr = set_header_info(mhdr, ref_freq, freq_axis, opts, tuple(gaussparf))
+
     # get pixels above threshold
     minimage = np.amin(model, axis=0)
     maskindices = np.argwhere(minimage > threshold)
@@ -372,7 +385,7 @@ def spi_fitter():
 
     # set weights for fit
     if opts.channel_weights is not None:
-        weights = np.array(opts.channel_weights)
+        weights = np.array(opts.channel_weights)[idx]
         try:
             assert weights.size == nband
             print("Using provided channel weights.", file=log)
@@ -382,19 +395,21 @@ def spi_fitter():
     else:
         if len(opts.residual) > 1:
             print("Getting weights from list of image headers.", file=log)
-            rhdr = [fits.getheader(res) for res in opts.residual]
+            rhdr = []
+            for i, res in enumerate(opts.residual):
+                rhdr.append(fits.getheader(res))
             weights = np.array([hdr["WSCVWSUM"] for hdr in rhdr])
             weights /= weights.max()
         elif rms_cube is not None:
             print("Using RMS in each imaging band to determine weights.",
                   file=log)
-            weights = np.where(rms_cube > 0, 1.0/rms_cube**2, 0.0)
+            weights = np.where(rms_cube[idx] > 0, 1.0/rms_cube[idx]**2, 0.0)
             # normalise
             weights /= weights.max()
         else:
             print("No residual or channel weights provided. "
                   "Using equal weights.", file=log)
-            weights = np.ones(nband, dtype=np.float64)
+            weights = np.ones(idx.sum(), dtype=np.float64)
         print(f"Channel weights: {weights}", file=log)
 
     ncomps, _ = fitcube.shape
