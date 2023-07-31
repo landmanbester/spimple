@@ -386,7 +386,7 @@ def spi_fitter():
 
     # set weights for fit
     if opts.channel_weights is not None:
-        weights = np.array(opts.channel_weights)[idx]
+        weights = np.array(opts.channel_weights)[fidx]
         try:
             assert weights.size == nband
             print("Using provided channel weights.", file=log)
@@ -404,13 +404,13 @@ def spi_fitter():
         elif rms_cube is not None:
             print("Using RMS in each imaging band to determine weights.",
                   file=log)
-            weights = np.where(rms_cube[idx] > 0, 1.0/rms_cube[idx]**2, 0.0)
+            weights = np.where(rms_cube[fidx] > 0, 1.0/rms_cube[fidx]**2, 0.0)
             # normalise
             weights /= weights.max()
         else:
             print("No residual or channel weights provided. "
                   "Using equal weights.", file=log)
-            weights = np.ones(idx.sum(), dtype=np.float64)
+            weights = np.ones(fidx.sum(), dtype=np.float64)
         print(f"Channel weights: {weights}", file=log)
 
     ncomps, _ = fitcube.shape
