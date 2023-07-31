@@ -95,6 +95,10 @@ def spi_fitter():
                         help="Correlation typ i.e. linear or circular. ")
     parser.add_argument('-band', "--band", type=str, default='l',
                         help="Band to use with JimBeam. L or UHF")
+   parser.add_argument('-db', '--deselect-bands', default=None, nargs='+', type=int,
+                       help="Indices of subbands to exclude from the fitting \n"
+                       "By default, all the sub-bands are used for the residual image. \n"
+                       "e.g. -db 1 2 will exclude sub-bands indexed at 1 & 2.")
 
     opts = parser.parse_args()
     opts = OmegaConf.create(vars(opts))
@@ -363,6 +367,13 @@ def spi_fitter():
     # remove completely nan slices
     freq_mask = np.isnan(model)
     fidx = ~np.all(freq_mask, axis=(1,2))
+
+    # exclude any bands that might be awful
+    if opts.deselect_bands:
+        print(f"Deselected bands are: {opts.deselect_bands}", file=log)
+        for bidx in opts.deselect_bands:
+            fidx[bidx] = False
+
     if fidx.any():
         model = model[fidx]
         beam_image = beam_image[fidx]
