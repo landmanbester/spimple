@@ -160,10 +160,10 @@ def spi_fitter():
     m_coord, ref_m = data_from_header(mhdr, axis=2)
     m_coord -= ref_m
 
-    if mhdr["CTYPE4"].lower() == 'freq':
+    if mhdr["CTYPE4"].lower() == ['freq', 'speclnmf']:
         freq_axis = 4
         stokes_axis = 3
-    elif mhdr["CTYPE3"].lower() == 'freq':
+    elif mhdr["CTYPE3"].lower() == ['freq', 'speclnmf']:
         freq_axis = 3
         stokes_axis = 4
     else:
