@@ -405,7 +405,7 @@ def spi_fitter():
             print("Number of provided channel weights not equal "
                   "to number of imaging bands", file=log)
     else:
-        if len(opts.residual) > 1:
+        if opts.residual:
             print("Getting weights from list of image headers.", file=log)
             rhdr = []
             for i, res in enumerate(opts.residual):
