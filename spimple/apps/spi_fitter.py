@@ -366,7 +366,7 @@ def spi_fitter():
     if fidx.any():
         model = model[fidx]
         beam_image = beam_image[fidx]
-        freqs = fresq[fidx]
+        freqs = freqs[fidx]
         gaussparf = list(gaussparf)
         for i, par in enumerate(gaussparf):
             if not fidx[i]:
