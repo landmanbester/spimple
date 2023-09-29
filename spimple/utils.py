@@ -390,3 +390,54 @@ def interpolate_beam(ll, mm, freqs, opts):
     # swap source and freq axes and reshape to image shape
     beam_source = np.transpose(beam_image, axes=(1, 0))
     return beam_source.squeeze().reshape((freqs.size, *ll.shape))
+
+
+import jax.numpy as jnp
+from jax import grad, jit, vmap, jvp, jacfwd, jacrev
+def _energy_func(data, wgt, w, logw, x):
+    '''
+    I(w) = I0 w ** (alpha + beta * log w + delta * log w **2)
+    logw = np.tile(np.log(w).reshape(nchan, 1), (1, order-1))**np.arange(order-1)
+    '''
+    res = data - x[0] * w ** jnp.dot(logw.dot(x[1:]))
+    return jnp.vdot(res, wgt*res)
+
+def _fit_spi_components(data, wgt, freq, freq0, beam, x0,
+                        order=2, tol=1e-8, maxiter=100, sigmainv=1e-10):
+    w = freq/freq0
+    order = x0.size
+    dof = jnp.maximum(w.size - order, 1)
+    eps = 1.0
+    k = 0
+    logw = jnp.tile(jnp.log(w).reshape(nchan, 1), (1, order-1))**jnp.arange(order-1)
+    phi = _energy_func(data, wgt, w, logw, x)
+    x = x0.copy()
+    fdf  = grad(_energy_func)
+    hess = jacfwd(jacrev(_energy_func))
+    while eps > tol and k < maxiter:
+        xp = x.copy()
+        phip = phi
+        j = -fdf(data, wgt, w, logw, x)
+        H = hess(data, wgt, w, logw, x)
+        delx = jnp.linalg.solve(H + sigmainv * np.eye(order), j)
+        gamma = 1.0
+        x = xp + gamma * delx
+        phi = _energy_func(data, wgt, w, logw, x)
+        while phi > phip:
+            gamma /= 2
+            x = xp + gamma * delx
+            phi = _energy_func(data, wgt, w, logw, x)
+
+        eps = jnp.linalg.norm(x - xp)/jnp.linalg.norm(x)
+        k += 1
+    if k == maxiter:
+        print("Warning - max iterations exceeded for component ")
+
+    # get diag of inv hessian for error in fit
+    phi = _energy_func(data, wgt, w, logw, x)
+    H = hess(data, wgt, w, logw, x)
+    try:
+        Hinv = jnp.linalg.inv(H)
+    except:
+        Hinv = jnp.linalg.inv(H + sigmainv * np.eye(order))
+    return x, jnp.diag(Hinv) * phi/dof
