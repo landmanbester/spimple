@@ -396,7 +396,8 @@ import jax.numpy as jnp
 from jax import grad, jit, vmap, jvp, jacfwd, jacrev
 def _energy_func(data, wgt, w, logw, x):
     '''
-    I(w) = I0 w ** (alpha + beta * log w + delta * log w **2)
+    I(w) = I0 w ** (alpha + beta * log w + delta * (log w)**2 + ...)
+    log I = log I0 + alpha * log w + beta (log w)**2 + delta * (log w)**3 + ...
     logw = np.tile(np.log(w).reshape(nchan, 1), (1, order-1))**np.arange(order-1)
     '''
     res = data - x[0] * w ** jnp.dot(logw.dot(x[1:]))
@@ -431,7 +432,7 @@ def _fit_spi_components(data, wgt, freq, freq0, beam, x0,
         eps = jnp.linalg.norm(x - xp)/jnp.linalg.norm(x)
         k += 1
     if k == maxiter:
-        print("Warning - max iterations exceeded for component ")
+        print("Warning - max iterations exceeded")
 
     # get diag of inv hessian for error in fit
     phi = _energy_func(data, wgt, w, logw, x)
