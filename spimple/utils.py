@@ -165,7 +165,7 @@ def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=
     imhat = r2c(iFs(image, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
 
     # convolve to desired resolution
-    if gausspari is None:
+    if gausspari in [None, ()]:
         imhat *= gausskernhat
     else:
         for i in range(nband):
