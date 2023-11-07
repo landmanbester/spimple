@@ -63,14 +63,18 @@ def image_convolver():
     l_coord -= ref_l
     m_coord, ref_m = data_from_header(hdr, axis=2)
     m_coord -= ref_m
-    if hdr["CTYPE4"].lower() == 'freq':
-        freq_axis = 4
-    elif hdr["CTYPE3"].lower() == 'freq':
-        freq_axis = 3
+    
+    if hdr["NAXIS"] >2:
+        if "CTYPE4" in hdr and hdr["CTYPE4"].lower() == 'freq':
+            freq_axis = 4
+        elif hdr["CTYPE3"].lower() == 'freq':
+            freq_axis = 3
+        else:
+            raise ValueError("Freq axis must be 3rd or 4th")
+        freqs, ref_freq = data_from_header(hdr, axis=freq_axis)
     else:
-        raise ValueError("Freq axis must be 3rd or 4th")
-    freqs, ref_freq = data_from_header(hdr, axis=freq_axis)
-
+        freqs = np.array([0])
+    
     nchan = freqs.size
     gausspari = ()
     if freqs.size > 1:
@@ -151,6 +155,7 @@ def image_convolver():
     if imagei.ndim != 3:
         raise ValueError("Unsupported number of image dimensions")
     print('Convolving image', file=log)
+    
     image, gausskern = convolve2gaussres(imagei, xx, yy, gaussparf,
                                          opts.nthreads, gausspari,
                                          opts.padding_frac)
