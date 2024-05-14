@@ -249,6 +249,7 @@ def spi_fitter():
 
             beam_image = load_fits(opts.beam_model, dtype=opts.out_dtype).squeeze()
         elif opts.beam_model == "JimBeam":
+            beam_image = []
             from katbeam import JimBeam
             if opts.band.lower() == 'l':
                 beam = JimBeam('MKAT-AA-L-JIM-2020')
