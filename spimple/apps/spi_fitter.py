@@ -94,7 +94,7 @@ def spi_fitter():
     parser.add_argument('-ct', '--corr-type', type=str, default='linear',
                         help="Correlation typ i.e. linear or circular. ")
     parser.add_argument('-band', "--band", type=str, default='l',
-                        help="Band to use with JimBeam. L or UHF")
+                        help="Band to use with JimBeam. L, UHF or S")
     parser.add_argument('-db', '--deselect-bands', default=None, nargs='+', type=int,
                         help="Indices of subbands to exclude from the fitting \n"
                         "By default, all the sub-bands are used for the residual image. \n"
@@ -252,9 +252,12 @@ def spi_fitter():
             from katbeam import JimBeam
             if opts.band.lower() == 'l':
                 beam = JimBeam('MKAT-AA-L-JIM-2020')
-            else:
+            elif opts.band.lower() == 'uhf':
                 beam = JimBeam('MKAT-AA-UHF-JIM-2020')
-            beam_image = np.zeros(model.shape, dtype=opts.out_dtype)
+            elif opts.band.lower() == 's':
+                beam = JimBeam('MKAT-AA-S-JIM-2020')
+            else:
+                raise ValueError(f"Unknown beam model for katbeam in band {opts.band}")
             for v in range(freqs.size):
                 beam_image[v] = beam.I(xx, yy, freqs[v]/1e6)  # freqs in MHz
 

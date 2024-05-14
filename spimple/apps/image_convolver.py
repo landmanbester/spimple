@@ -36,7 +36,7 @@ def image_convolver():
                         "Use power_beam_maker to make power beam "
                         "corresponding to image. ")
     parser.add_argument('-band', "--band", type=str, default='l',
-                        help="Band to use with JimBeam. L or UHF")
+                        help="Band to use with JimBeam. L, UHF or S")
     parser.add_argument('-pb-min', '--pb-min', type=float, default=0.05,
                         help="Set image to zero where pb falls below this value")
     parser.add_argument('-pf', '--padding-frac', type=float, default=0.5,
@@ -181,8 +181,13 @@ def image_convolver():
             from katbeam import JimBeam
             if opts.band.lower() == 'l':
                 beam = JimBeam('MKAT-AA-L-JIM-2020')
-            else:
+            elif opts.band.lower() == 'uhf':
                 beam = JimBeam('MKAT-AA-UHF-JIM-2020')
+            elif opts.band.lower() == 's':
+                beam = JimBeam('MKAT-AA-S-JIM-2020')
+            else:
+                raise ValueError(f"Unknown beam model for katbeam in band {opts.band}")
+
             beam_image = np.zeros(image.shape, dtype=opts.out_dtype)
             for v in range(freqs.size):
                 beam_image[v] = beam.I(xx, yy, freqs[v]/1e6)  # freqs in MHz
