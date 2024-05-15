@@ -300,11 +300,14 @@ def spi_fitter():
     if opts.residual:
         # get headers and frequencies from residual image(s)
         residuals = [load_fits(res, dtype=opts.out_dtype) for res in opts.residual]
+        del residuals[0]
         resid = np.stack(residuals).squeeze()
         rhdr = [fits.getheader(res) for res in opts.residual]
         freqs_res = np.array([data_from_header(fits.getheader(res), axis=freq_axis)[0]
                               for res in opts.residual]).flatten()
         freqs_res = freqs if opts.channel_freqs else freqs_res
+        del rhdr[0]
+        del freqs_res[0]
         if not np.array_equal(freqs, freqs_res):
             raise ValueError("Freqs of residual do not match those of model")
 
