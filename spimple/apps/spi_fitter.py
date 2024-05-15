@@ -395,9 +395,6 @@ def spi_fitter():
         for i, par in enumerate(gaussparf):
             if not fidx[i]:
                 gaussparf.pop(i)
-                beam_image.pop(i)
-                model.pop(i)
-                freqs.pop(i)
         new_hdr = set_header_info(mhdr, ref_freq, freq_axis, opts, tuple(gaussparf))
 
     # get pixels above threshold
