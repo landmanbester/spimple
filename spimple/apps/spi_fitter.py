@@ -276,7 +276,7 @@ def spi_fitter():
         beam_image = np.ones(model.shape, dtype=opts.out_dtype)
 
     # beam cut off
-    model = np.where(beam_image > opts.pb_min, model, 0.0)
+    #model = np.where(beam_image > opts.pb_min, model, 0.0)
 
     if not opts.dont_convolve:
         print("Convolving model", file=log)
@@ -399,7 +399,9 @@ def spi_fitter():
         new_hdr = set_header_info(mhdr, ref_freq, freq_axis, opts, tuple(gaussparf))
 
     # get pixels above threshold
+    print(model, file=log)
     minimage = np.amin(model, axis=0)
+    print(miniimage, file=log)
     maskindices = np.argwhere(minimage > threshold)
     nanindices = np.argwhere(minimage <= threshold)
     if not maskindices.size:
