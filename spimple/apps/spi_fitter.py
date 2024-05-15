@@ -154,10 +154,11 @@ def spi_fitter():
     # load model images or cube
     model_header = {}
     for i, m in enumerate(opts.model):
-        model = load_fits(m, dtype=opts.out_dtype).squeeze()
-        orig_shape = model.shape
-        mhdr = fits.getheader(m)
-        model_header[i] = [model, mhdr]
+        if i not in opts.deselect_bands:
+            model = load_fits(m, dtype=opts.out_dtype).squeeze()
+            orig_shape = model.shape
+            mhdr = fits.getheader(m)
+            model_header[i] = [model, mhdr]
 
     l_coord, ref_l = data_from_header(mhdr, axis=1)
     l_coord -= ref_l
