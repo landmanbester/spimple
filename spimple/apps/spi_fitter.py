@@ -260,7 +260,7 @@ def spi_fitter():
             else:
                 raise ValueError(f"Unknown beam model for katbeam in band {opts.band}")
             for v in range(freqs.size):
-                beam_imageo.append(beam.I(xx, yy, freqs[v]/1e6))  # freqs in MHz
+                beam_image.append(beam.I(xx, yy, freqs[v]/1e6))  # freqs in MHz
             beam_image = np.stack(beam_image)
 
         else:
