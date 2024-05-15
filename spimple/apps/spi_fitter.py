@@ -403,7 +403,6 @@ def spi_fitter():
     # get pixels above threshold
     print(model, file=log)
     minimage = np.amin(model, axis=0)
-    print(miniimage, file=log)
     maskindices = np.argwhere(minimage > threshold)
     nanindices = np.argwhere(minimage <= threshold)
     if not maskindices.size:
