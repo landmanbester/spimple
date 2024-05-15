@@ -307,7 +307,9 @@ def spi_fitter():
                               for res in opts.residual]).flatten()
         freqs_res = freqs if opts.channel_freqs else freqs_res
         del rhdr[0]
-        freqs_res.remove(0)
+        freqs_res = list(freqs_res)
+        freqs_res.pop(0)
+        freqs_res = np.array(freqs_res)
         if not np.array_equal(freqs, freqs_res):
             raise ValueError("Freqs of residual do not match those of model")
 
@@ -390,10 +392,10 @@ def spi_fitter():
         gaussparf = list(gaussparf)
         for i, par in enumerate(gaussparf):
             if not fidx[i]:
-                gaussparf.remove(i)
-                beam_image.remove(i)
-                model.remove(i)
-                freqs.remove(i)
+                gaussparf.pop(i)
+                beam_image.pop(i)
+                model.pop(i)
+                freqs.pop(i)
         new_hdr = set_header_info(mhdr, ref_freq, freq_axis, opts, tuple(gaussparf))
 
     # get pixels above threshold
