@@ -57,7 +57,7 @@ def spi_fitter():
                         "Default is to write all of them")
     parser.add_argument('-pf', "--padding-frac", default=0.5, type=float,
                         help="Padding factor for FFT's.")
-    parser.add_argument('-dc', "--dont-convolve", type=str2bool, nargs='?', const=True, default=False,
+    parser.add_argument('-dc', "--dont-convolve", type=str2bool, nargs='?', const=True, default=True,
                         help="Passing this flag bypasses the convolution "
                         "by the clean beam")
     parser.add_argument('-cw', "--channel_weights", default=None, nargs='+', type=float,
