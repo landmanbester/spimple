@@ -193,8 +193,10 @@ def spi_fitter():
                 models_data.append(md)
         else:
             models_data.append(model_data)
+    print(models_data, file=log)
     # stack model data cube
     model = np.stack(models_data)
+    print(model, file=log)
     freqs = np.array(freqs)  # convert list to array
     freqs = np.array(opts.channel_freqs) if opts.channel_freqs is not None else freqs
     nband = freqs.size
