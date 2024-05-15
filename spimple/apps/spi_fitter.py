@@ -307,7 +307,7 @@ def spi_fitter():
                               for res in opts.residual]).flatten()
         freqs_res = freqs if opts.channel_freqs else freqs_res
         del rhdr[0]
-        del freqs_res[0]
+        freqs_res.remove(0)
         if not np.array_equal(freqs, freqs_res):
             raise ValueError("Freqs of residual do not match those of model")
 
