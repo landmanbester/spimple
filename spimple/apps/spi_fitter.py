@@ -259,6 +259,7 @@ def spi_fitter():
                 beam = JimBeam('MKAT-AA-S-JIM-2020')
             else:
                 raise ValueError(f"Unknown beam model for katbeam in band {opts.band}")
+            beam_image = np.zeros_like(model)
             for v in range(freqs.size):
                 beam_image[v] = beam.I(xx, yy, freqs[v]/1e6)  # freqs in MHz
 
