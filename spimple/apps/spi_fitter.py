@@ -251,6 +251,7 @@ def spi_fitter():
             beam_image = load_fits(opts.beam_model, dtype=opts.out_dtype).squeeze()
         elif opts.beam_model == "JimBeam":
             from katbeam import JimBeam
+            beam_image = []
             if opts.band.lower() == 'l':
                 beam = JimBeam('MKAT-AA-L-JIM-2020')
             elif opts.band.lower() == 'uhf':
@@ -261,7 +262,8 @@ def spi_fitter():
                 raise ValueError(f"Unknown beam model for katbeam in band {opts.band}")
             beam_image = np.zeros_like(model)
             for v in range(freqs.size):
-                beam_image[v] = beam.I(xx, yy, freqs[v]/1e6)  # freqs in MHz
+                beam_image.append(beam.I(xx, yy, freqs[v]/1e6))  # freqs in MHz
+            beam_image = np.stack(beam_image)
 
         else:
             beam_image = interpolate_beam(xx, yy, freqs, opts)
