@@ -4,10 +4,10 @@ iFs = np.fft.ifftshift
 Fs = np.fft.fftshift
 from astropy.io import fits
 from glob import glob
-from africanus.rime.dask import beam_cube_dde
-from africanus.rime.fast_beam_cubes import beam_cube_dde
 from africanus.rime import parallactic_angles
 from africanus.util.numba import jit
+from daskms import xds_from_ms, xds_from_table
+import dask.array as da
 
 def str2bool(v):
     if isinstance(v, bool):
@@ -98,7 +98,7 @@ def Gaussian2D(xin, yin, GaussPar=(1., 1., 0.), normalise=True):
     else:
         A = np.array([[1. / Smin ** 2, 0],
                   [0, 1. / Smaj ** 2]])
-           
+
 
     c, s, t = np.cos, np.sin, np.deg2rad(-PA)
     R = np.array([[c(t), -s(t)],
@@ -249,19 +249,19 @@ def extract_dde_info(opts, freqs):
         # compute paralactic angles
         parangles = parallactic_angles(utimes, ant_pos, phase_dir)
 
-        # mean over antanna nant -> 1
+        # mean over antenna nant -> 1
         parangles = np.mean(parangles, axis=1, keepdims=True)
         nant = 1
 
         # beam_cube_dde requirements
         ant_scale = np.ones((nant, nband, 2), dtype=np.float64)
         point_errs = np.zeros((ntimes, nant, nband, 2), dtype=np.float64)
-
         return (parangles,
-                da.from_array(ant_scale, chunks=ant_scale.shape),
+                # da.from_array(ant_scale, chunks=ant_scale.shape),
+                ant_scale,
                 point_errs,
                 unflag_counts,
-                True)
+                False)
     else:
         ntimes = 1
         nant = 1
@@ -287,6 +287,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
         raise KeyError("Unknown corr_type supplied. Only 'linear' or 'circular' supported")
 
     for path in paths:
+        print(f'Loadig beam from {path}')
         if corr1.lower() in path[-10::]:
             if 're' in path[-7::]:
                 corr1_re = load_fits(path)
@@ -308,6 +309,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     beam_amp = (corr1_re**2 + corr1_im**2 + corr2_re**2 + corr2_im**2)/2.0
 
     # get cube in correct shape for interpolation code
+    beam_amp = beam_amp.squeeze()
     beam_amp = np.ascontiguousarray(np.transpose(beam_amp, (1, 2, 0))
                                     [:, :, :, None, None])
     # get cube info
@@ -369,6 +371,7 @@ def interpolate_beam(ll, mm, freqs, opts):
 
     # interpolate beam
     if use_dask:
+        from africanus.rime.dask import beam_cube_dde
         lm_source = da.from_array(lm_source, chunks=lm_source.shape)
         freqs = da.from_array(freqs, chunks=freqs.shape)
         # compute nthreads images at a time to avoid memory errors
@@ -393,6 +396,7 @@ def interpolate_beam(ll, mm, freqs, opts):
         # remove time axis
         beam_image = beam_image[:, 0, :]
     else:
+        from africanus.rime.fast_beam_cubes import beam_cube_dde
         beam_image = beam_cube_dde(beam_amp, beam_extents, bfreqs,
                                     lm_source, parangles, point_errs,
                                     ant_scale, freqs).squeeze()
@@ -400,5 +404,6 @@ def interpolate_beam(ll, mm, freqs, opts):
 
 
     # swap source and freq axes and reshape to image shape
+    beam_image = np.mean(beam_image, axis=1)
     beam_source = np.transpose(beam_image, axes=(1, 0))
     return beam_source.squeeze().reshape((freqs.size, *ll.shape))
