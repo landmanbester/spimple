@@ -24,7 +24,7 @@ setup(
      long_description_content_type="text/markdown",
      url="https://github.com/landmanbester/spimple",
      packages=find_packages(),
-     python_requires='>=3.9',
+     python_requires='>=3.8',
      install_requires=requirements,
      classifiers=[
          "Programming Language :: Python :: 3",
