@@ -287,8 +287,8 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
         raise KeyError("Unknown corr_type supplied. Only 'linear' or 'circular' supported")
 
     for path in paths:
-        print(f'Loadig beam from {path}')
         if corr1.lower() in path[-10::]:
+            print(f'Loading beam from {path}')
             if 're' in path[-7::]:
                 corr1_re = load_fits(path)
                 if beam_hdr is None:
@@ -298,6 +298,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
             else:
                 raise NotImplementedError("Only re/im patterns supported")
         elif corr2.lower() in path[-10::]:
+            print(f'Loading beam from {path}')
             if 're' in path[-7::]:
                 corr2_re = load_fits(path)
             elif 'im' in path[-7::]:
@@ -309,7 +310,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     beam_amp = (corr1_re**2 + corr1_im**2 + corr2_re**2 + corr2_im**2)/2.0
 
     # get cube in correct shape for interpolation code
-    beam_amp = beam_amp.squeeze()
+    beam_amp = beam_amp[0]  # drop corr axis
     beam_amp = np.ascontiguousarray(np.transpose(beam_amp, (1, 2, 0))
                                     [:, :, :, None, None])
     # get cube info
@@ -399,11 +400,12 @@ def interpolate_beam(ll, mm, freqs, opts):
         from africanus.rime.fast_beam_cubes import beam_cube_dde
         beam_image = beam_cube_dde(beam_amp, beam_extents, bfreqs,
                                     lm_source, parangles, point_errs,
-                                    ant_scale, freqs).squeeze()
+                                    ant_scale, freqs) #.squeeze()
+        beam_image = beam_image[:, :, 0, :, 0, 0]
+        beam_image = np.mean(beam_image, axis=1)
 
 
 
     # swap source and freq axes and reshape to image shape
-    beam_image = np.mean(beam_image, axis=1)
     beam_source = np.transpose(beam_image, axes=(1, 0))
     return beam_source.squeeze().reshape((freqs.size, *ll.shape))
