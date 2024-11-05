@@ -18,7 +18,8 @@ from daskms import xds_from_ms, xds_from_table
 def power_beam_maker():
     parser = argparse.ArgumentParser(description='Beam intrepolation tool.',
                                 formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-image', "--image", type=str, required=True)
+    parser.add_argument('-image', "--image", type=str, required=True,
+                        help="A fits image providing the coordinates to interpolate to.")
     parser.add_argument('-ms', "--ms", nargs="+", type=str,
                         help="Mesurement sets used to make the image. \n"
                         "Used to get paralactic angles if doing primary beam correction")
