@@ -432,10 +432,11 @@ def spi_fitter():
         print(f"Channel weights: {weights}", file=log)
 
     ncomps, _ = fitcube.shape
+    cchunks = np.maximum(1, ncomps//opts.nthreads)
     fitcube = da.from_array(fitcube.astype(np.float64),
-                            chunks=(ncomps//opts.nthreads, nband))
+                            chunks=(cchunks, nband))
     beam_comps = da.from_array(beam_comps.astype(np.float64),
-                               chunks=(ncomps//opts.nthreads, nband))
+                               chunks=(cchunks, nband))
     weights = da.from_array(weights.astype(np.float64), chunks=(nband))
     freqsdask = da.from_array(freqs.astype(np.float64), chunks=(nband))
 
