@@ -220,7 +220,7 @@ def spi_fitter():
     print("Reference frequency is %3.2e Hz" % ref_freq, file=log)
 
     # LB - new header for cubes if ref_freqs differ
-    new_hdr = set_header_info(mhdr, ref_freq, freq_axis, opts, gaussparf)
+    new_hdr = set_header_info(mhdr, ref_freq, freq_axis, beampars=gaussparf)
 
     # save next to model if no outfile is provided
     outfile = opts.output_filename
@@ -389,7 +389,7 @@ def spi_fitter():
         #for i, par in enumerate(gaussparf):
         #    if not fidx[i]:
         #        gaussparf.remove(par)
-        new_hdr = set_header_info(mhdr, ref_freq, freq_axis, opts, tuple(gaussparf))
+        new_hdr = set_header_info(mhdr, ref_freq, freq_axis, beampars=tuple(gaussparf))
 
     # get pixels above threshold
     minimage = np.amin(model, axis=0)
