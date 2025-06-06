@@ -89,6 +89,3 @@ def power_beam_maker():
     # save power beam
     save_fits(opts.output_filename, beam_image, new_hdr)
     print(f"Wrote interpolated beam cube to {opts.output_filename}", file=log)
-
-
-    return
