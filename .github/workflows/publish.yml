@@ -30,7 +30,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
           fetch-depth: 1
 
