@@ -16,6 +16,11 @@ import dask.array as da
 from africanus.model.spi.dask import fit_spi_components
 
 def spi_fitter():
+    """
+    Runs a command-line tool for spectral index fitting on radio astronomy image cubes.
+    
+    This function orchestrates the workflow for fitting spectral index (alpha) and reference intensity (I0) maps from multi-frequency radio interferometric image cubes. It handles argument parsing, model and residual image loading, PSF and beam parameter extraction, optional convolution, masking, thresholding, frequency band selection, component extraction, spectral fitting, and output of results as FITS files. The tool supports various options for beam modeling, channel weighting, and output product selection, and is designed for efficient processing of large datasets using Dask for parallelization.
+    """
     parser = argparse.ArgumentParser(description='Simple spectral index fitting tool.',
                                 formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-model', "--model", type=str, nargs='+')
