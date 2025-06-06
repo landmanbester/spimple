@@ -13,13 +13,13 @@ classifiers = [
 ]
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = ">=3.10, <3.13"
 omegaconf = "*"
 katbeam = "*"
 pytest = "^6.2.2"
 pyscilog = "^0.1.2"
 codex-africanus = {extras = ["complete"], version = "*"}
-dask-ms = {extras = ["xarray"], version = "^0.2.22"}
+dask-ms = {extras = ["xarray"], version = ">=0.2.22"}
 dask = {extras = ["array"], version = "<=2024.10"}
 
 [tool.poetry.scripts]
