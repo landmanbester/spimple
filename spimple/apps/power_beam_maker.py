@@ -16,6 +16,11 @@ from daskms import xds_from_ms, xds_from_table
 
 
 def power_beam_maker():
+    """
+    Interpolates a primary beam model onto the coordinate grid of a specified FITS image and saves the result as a new FITS file.
+    
+    This command-line tool extracts spatial and frequency coordinates from an input FITS image, interpolates the primary beam pattern using optional measurement set and beam model information, updates the FITS header with relevant frequency metadata, and writes the resulting beam cube to the specified output file.
+    """
     parser = argparse.ArgumentParser(description='Beam intrepolation tool.',
                                 formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-image', "--image", type=str, required=True,
