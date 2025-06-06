@@ -373,6 +373,7 @@ def interpolate_beam(ll, mm, freqs, opts):
 
     # interpolate beam
     if use_dask:
+        # chunking is over time and antenna
         from africanus.rime.dask import beam_cube_dde
         lm_source = da.from_array(lm_source, chunks=lm_source.shape)
         freqs = da.from_array(freqs, chunks=freqs.shape)
@@ -382,6 +383,7 @@ def interpolate_beam(ll, mm, freqs, opts):
         nchunks = I.size
         I = np.append(I, ntimes)
         beam_image = np.zeros((ll.size, 1, nband), dtype=beam_amp.dtype)
+        ant_scale = da.from_array(ant_scale, chunks=(1, freqs.size, 2))
         for i in range(nchunks):
             ilow = I[i]
             ihigh = I[i+1]
