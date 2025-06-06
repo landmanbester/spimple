@@ -54,7 +54,7 @@ def save_fits(name, data, hdr, overwrite=True, dtype=np.float32):
     hdu.writeto(name, overwrite=overwrite)
 
 
-def set_header_info(mhdr, ref_freq, freq_axis, args, beampars):
+def set_header_info(mhdr, ref_freq, freq_axis, beampars=None):
     hdr_keys = ['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'NAXIS3',
                 'NAXIS4', 'CTYPE1', 'CTYPE2', 'CTYPE3', 'CTYPE4', 'CRPIX1',
                 'CRPIX2', 'CRPIX3', 'CRPIX4', 'CRVAL1', 'CRVAL2', 'CRVAL3',
@@ -71,9 +71,10 @@ def set_header_info(mhdr, ref_freq, freq_axis, args, beampars):
         new_hdr["NAXIS4"] = 1
         new_hdr["CRVAL4"] = ref_freq
 
-    new_hdr['BMAJ'] = beampars[0]
-    new_hdr['BMIN'] = beampars[1]
-    new_hdr['BPA'] = beampars[2]
+    if beampars is not None:
+        new_hdr['BMAJ'] = beampars[0]
+        new_hdr['BMIN'] = beampars[1]
+        new_hdr['BPA'] = beampars[2]
 
     new_hdr = fits.Header(new_hdr)
 

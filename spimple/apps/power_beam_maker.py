@@ -11,7 +11,7 @@ import numpy as np
 from astropy.io import fits
 import warnings
 from spimple.utils import (load_fits, save_fits, data_from_header,
-                           interpolate_beam)
+                           interpolate_beam, set_header_info)
 from daskms import xds_from_ms, xds_from_table
 
 
@@ -78,8 +78,11 @@ def power_beam_maker():
     # interpolate primary beam to fits header and optionally average over time
     beam_image = interpolate_beam(xx, yy, freqs, opts)
 
+    # new header for cubes if ref_freqs or freq_axis differs
+    new_hdr = set_header_info(hdr, ref_freq, freq_axis)
+
     # save power beam
-    save_fits(opts.output_filename, beam_image, hdr)
+    save_fits(opts.output_filename, beam_image, new_hdr)
     print(f"Wrote interpolated beam cube to {opts.output_filename}", file=log)
 
 
