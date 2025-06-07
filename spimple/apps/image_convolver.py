@@ -227,13 +227,17 @@ def image_convolver():
         print(f"Wrote convolved image to {name}", file=log)
 
     if 'b' in opts.products:
+        if 'beam_image' not in locals():
+            raise ValueError("Cannot write power beam: no beam model provided")
         name = outfile + '.power_beam.fits'
         save_fits(name, beam_image, hdr, dtype=opts.out_dtype)
         print(f"Wrote average power beam to {name}", file=log)
 
     if 'w' in opts.products:
+        if 'beam_image' not in locals():
+            raise ValueError("Cannot write spatial weight: no beam model provided")
         name = outfile + '.spatial_weight.fits'
         save_fits(name, beam_image**2, hdr, dtype=opts.out_dtype)
-        print(f"Wrote average power beam to {name}", file=log)
+        print(f"Wrote spatial weight to {name}", file=log)
 
     print("All done here", file=log)
