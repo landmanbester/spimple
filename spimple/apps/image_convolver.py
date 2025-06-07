@@ -90,7 +90,10 @@ def image_convolver():
             if key in hdr.keys():
                 emaj = hdr[key]
                 emin = hdr['BMIN' + str(i)]
-                pa = hdr['BPA' + str(i)]
+                try:
+                    pa = hdr['BPA' + str(i)]
+                except:
+                    pa = hdr['PA' + str(i)]
                 gausspari += ((emaj, emin, pa),)
     else:
         if 'BMAJ' in hdr.keys():
