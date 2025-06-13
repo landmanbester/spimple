@@ -98,10 +98,17 @@ def mosaic():
         image_list = sorted(glob(opts.images))
     else:
         image_list = []
-        for img in opts.images:
-            image_list.extend(glob(img))
+        for images in opts.images:
+            imgs = sorted(glob(images))
+            if not len(imgs):
+                raise RuntimeError(f'Nothing found at {images}')
+            image_list.extend(imgs)
     
     ref_wcs, ufreqs, out_names = mosaic_info(image_list, opts.output_filename)
+
+    nyo, nxo = ref_wcs.array_shape
+    nchano = ufreqs.size
+    print(f'Output image will be of shape ({nchano}, {nxo}, {nyo})', file=log)
     
     # check if projection has been done
     do_project = False
@@ -129,9 +136,11 @@ def mosaic():
             # Process the completed task
             for task in ready:
                 result = ray.get(task)
-                print(f"Completed: {result}")
+                print(f"Completed: {result}", file=log)
     
     print('Solving linear system', file=log)
+    outim = np.zeros((nchano, nxo, nyo))
+    outwgt = np.zeros((nchano, nxo, nyo))
     tasks = []
     for freq in ufreqs:
         fut = stitch_images.remote(freq, out_names)
@@ -148,28 +157,32 @@ def mosaic():
             image, weight, info, freq = ray.get(task)
             print(f"Conjugate gradient completed after {info} iterations "
                   f"for freq = {freq}", file=log)
-    
-    # print(f"Output coverage: RA [{ra_min:.4f}, {ra_max:.4f}], Dec [{dec_min:.4f}, {dec_max:.4f}]", file=log)
-    # print(f"Output mosaic size: {nx_out} x {ny_out} pixels", file=log)
+            c = np.nonzero(ufreqs==freq)[0]
+            outim[c] = image
+            outwgt[c] = outwgt
     
     # Create output header
-    ny, nx = ref_wcs.array_shape
     cell_x = np.abs(ref_wcs.wcs.cdelt[0])
     cell_y = np.abs(ref_wcs.wcs.cdelt[1])
     ra = ref_wcs.wcs.crval[0]*np.pi/180
     dec = ref_wcs.wcs.crval[1]*np.pi/180
-    out_hdr = set_wcs(cell_x, cell_y, nx, ny, (ra, dec), 
+    out_hdr = set_wcs(cell_x, cell_y, nxo, nyo, (ra, dec), 
                       ufreqs, unit='Jy/beam', GuassPar=None, ms_time=None,
                       header=True, casambm=False)
 
     # Save output
-    save_fits(image, opts.output_filename, out_hdr, dtype=opts.out_dtype)
+    from astropy.io import fits
+    hdu = fits.PrimaryHDU(header=out_hdr)
+    hdu.data = outim
+    hdu.writeto(opts.output_filename, overwrite=True)
+    # save_fits(image, opts.output_filename, out_hdr, dtype=opts.out_dtype)
     print(f"Saved mosaic to {opts.output_filename}", file=log)
 
     # Save weight map
-    weight_sum = weight
     weight_filename = opts.output_filename.replace('.fits', '_weights.fits')
-    save_fits(weight_sum, weight_filename, out_hdr, dtype=opts.out_dtype)
+    hdu.data = outwgt
+    hdu.writeto(weight_filename, overwrite=True)
+    # save_fits(weight_sum, weight_filename, out_hdr, dtype=opts.out_dtype)
     print(f"Saved weight map to {weight_filename}", file=log)
 
     print("Mosaic completed successfully", file=log)
