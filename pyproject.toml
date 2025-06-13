@@ -1,0 +1,34 @@
+[tool.poetry]
+name = "spimple"
+version = "0.0.4"
+description = "Radio astronomy image post-processing tools"
+authors = ["Landman Bester <lbester@sarao.ac.za>"]
+readme = "README.md"
+homepage = "https://github.com/landmanbester/spimple"
+license = "MIT"
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10, <3.13"
+omegaconf = "*"
+katbeam = "*"
+pyscilog = "^0.1.2"
+codex-africanus = {extras = ["complete"], version = "*"}
+dask-ms = {extras = ["xarray"], version = ">=0.2.22"}
+dask = {extras = ["array"], version = "<=2024.10"}
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0.0"
+
+[tool.poetry.scripts]
+spimple-imconv = "spimple.apps.image_convolver:image_convolver"
+spimple-spifit = "spimple.apps.spi_fitter:spi_fitter"
+spimple-binterp = "spimple.apps.power_beam_maker:power_beam_maker"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

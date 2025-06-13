@@ -4,12 +4,18 @@ iFs = np.fft.ifftshift
 Fs = np.fft.fftshift
 from astropy.io import fits
 from glob import glob
-from africanus.rime.dask import beam_cube_dde
-from africanus.rime.fast_beam_cubes import beam_cube_dde
 from africanus.rime import parallactic_angles
 from africanus.util.numba import jit
+from daskms import xds_from_ms, xds_from_table
+import dask.array as da
 
 def str2bool(v):
+    """
+    Converts a string or boolean input to a boolean value.
+    
+    Accepts common string representations of true and false. Raises an
+    ArgumentTypeError if the input cannot be interpreted as a boolean.
+    """
     if isinstance(v, bool):
         return v
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
@@ -48,13 +54,39 @@ def load_fits(name, dtype=np.float32):
 
 
 def save_fits(name, data, hdr, overwrite=True, dtype=np.float32):
+    """
+    Saves a 4D NumPy array to a FITS file with the specified header.
+    
+    The data is transposed and reversed along the last axis to match FITS conventions, converted to Fortran-contiguous order, and written to disk.
+    
+    Args:
+        name: Output FITS file path.
+        data: Input array to save (will be broadcast to 4D if needed).
+        hdr: FITS header to use for the output file.
+        overwrite: If True, overwrite the file if it exists.
+        dtype: Data type for the output array.
+    """
     hdu = fits.PrimaryHDU(header=hdr)
     data = np.transpose(to4d(data), axes=(0, 1, 3, 2))[:, :, ::-1]
     hdu.data = np.require(data, dtype=dtype, requirements='F')
     hdu.writeto(name, overwrite=overwrite)
 
 
-def set_header_info(mhdr, ref_freq, freq_axis, args, beampars):
+def set_header_info(mhdr, ref_freq, freq_axis, beampars=None):
+    """
+    Creates a new FITS header with updated frequency axis and optional beam parameters.
+    
+    Copies selected header keys from the input header, sets the specified frequency axis to length 1 with the given reference frequency, and optionally adds beam parameters (`BMAJ`, `BMIN`, `BPA`) if provided.
+    
+    Args:
+        mhdr: Input FITS header to copy keys from.
+        ref_freq: Reference frequency value to set on the specified axis.
+        freq_axis: Axis index (3 or 4) to update with the reference frequency.
+        beampars: Optional tuple of (major axis, minor axis, position angle) for beam parameters.
+    
+    Returns:
+        A new astropy.io.fits.Header object with updated frequency and optional beam information.
+    """
     hdr_keys = ['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'NAXIS3',
                 'NAXIS4', 'CTYPE1', 'CTYPE2', 'CTYPE3', 'CTYPE4', 'CRPIX1',
                 'CRPIX2', 'CRPIX3', 'CRPIX4', 'CRVAL1', 'CRVAL2', 'CRVAL3',
@@ -71,9 +103,10 @@ def set_header_info(mhdr, ref_freq, freq_axis, args, beampars):
         new_hdr["NAXIS4"] = 1
         new_hdr["CRVAL4"] = ref_freq
 
-    new_hdr['BMAJ'] = beampars[0]
-    new_hdr['BMIN'] = beampars[1]
-    new_hdr['BPA'] = beampars[2]
+    if beampars is not None:
+        new_hdr['BMAJ'] = beampars[0]
+        new_hdr['BMIN'] = beampars[1]
+        new_hdr['BPA'] = beampars[2]
 
     new_hdr = fits.Header(new_hdr)
 
@@ -81,6 +114,23 @@ def set_header_info(mhdr, ref_freq, freq_axis, args, beampars):
 
 
 def Gaussian2D(xin, yin, GaussPar=(1., 1., 0.), normalise=True):
+    """
+    Generates a 2D elliptical Gaussian kernel on a specified coordinate grid.
+    
+    Args:
+        xin: 2D array of x-coordinates.
+        yin: 2D array of y-coordinates.
+        GaussPar: Tuple of (major axis FWHM, minor axis FWHM, position angle in degrees).
+        normalise: If True, normalizes the kernel so its sum is 1.
+    
+    Returns:
+        2D NumPy array representing the Gaussian kernel, matching the shape of the input grids.
+    
+    Raises:
+        ValueError: If input coordinate arrays are not both 2D or do not have matching shapes.
+    
+    The kernel is computed only within a radius of five times the major axis. FWHM parameters are converted to standard deviation for the Gaussian calculation. If either axis is zero, the kernel is filled with NaNs.
+    """
     if xin.ndim != 2:
         raise ValueError("Input coordinates must be 2D")
     if yin.shape != xin.shape:
@@ -98,7 +148,7 @@ def Gaussian2D(xin, yin, GaussPar=(1., 1., 0.), normalise=True):
     else:
         A = np.array([[1. / Smin ** 2, 0],
                   [0, 1. / Smaj ** 2]])
-           
+
 
     c, s, t = np.cos, np.sin, np.deg2rad(-PA)
     R = np.array([[c(t), -s(t)],
@@ -196,8 +246,17 @@ def _unflagged_counts(flags, time_idx, out):
 
 def extract_dde_info(opts, freqs):
     """
-    Computes paralactic angles, antenna scaling and pointing information
-    required for beam interpolation.
+    Extracts parallactic angles, antenna scaling, pointing errors, and unflagged data counts for beam interpolation.
+    
+    If measurement set files are provided in `opts.ms`, computes these quantities from the data, ensuring consistency of antenna positions and phase centers across sets. Otherwise, returns default arrays suitable for beam interpolation.
+    
+    Returns:
+        A tuple containing:
+            - parangles: Array of parallactic angles averaged over antennas.
+            - ant_scale: Array of antenna scaling factors.
+            - point_errs: Array of antenna pointing errors.
+            - unflag_counts: Array of unflagged data counts per time.
+            - A boolean flag (always False).
     """
     # get ms info required to compute paralactic angles and weighted sum
     nband = freqs.size
@@ -249,19 +308,19 @@ def extract_dde_info(opts, freqs):
         # compute paralactic angles
         parangles = parallactic_angles(utimes, ant_pos, phase_dir)
 
-        # mean over antanna nant -> 1
+        # mean over antenna nant -> 1
         parangles = np.mean(parangles, axis=1, keepdims=True)
         nant = 1
 
         # beam_cube_dde requirements
         ant_scale = np.ones((nant, nband, 2), dtype=np.float64)
         point_errs = np.zeros((ntimes, nant, nband, 2), dtype=np.float64)
-
         return (parangles,
-                da.from_array(ant_scale, chunks=ant_scale.shape),
+                # da.from_array(ant_scale, chunks=ant_scale.shape),
+                ant_scale,
                 point_errs,
                 unflag_counts,
-                True)
+                False)
     else:
         ntimes = 1
         nant = 1
@@ -275,6 +334,20 @@ def extract_dde_info(opts, freqs):
 
 def make_power_beam(opts, lm_source, freqs, use_dask):
     # print(f"Loading fits beam patterns from {opts.beam_model}", file=log)
+    """
+    Loads and constructs a power beam cube from FITS beam model files for interpolation.
+    
+    Searches for FITS files matching the specified beam model pattern and loads the real and imaginary components for two correlations (linear or circular). Computes the power beam as the average squared magnitude of both correlations, verifies spatial and frequency coverage, and extracts spatial extents and frequency axis information. Returns the beam amplitude cube, spatial extents, and beam frequencies as either Dask arrays or NumPy arrays depending on the `use_dask` flag.
+    
+    Args:
+        opts: Options object containing beam model pattern and correlation type.
+        lm_source: Array of source direction cosines for spatial coverage validation.
+        freqs: Array of frequencies to check against beam model coverage.
+        use_dask: If True, returns Dask arrays; otherwise, returns NumPy arrays.
+    
+    Returns:
+        Tuple containing the beam amplitude cube, spatial extents, and beam frequencies.
+    """
     paths = glob(opts.beam_model + '**_**.fits')
     beam_hdr = None
     if opts.corr_type == 'linear':
@@ -288,6 +361,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
 
     for path in paths:
         if corr1.lower() in path[-10::]:
+            print(f'Loading beam from {path}')
             if 're' in path[-7::]:
                 corr1_re = load_fits(path)
                 if beam_hdr is None:
@@ -297,6 +371,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
             else:
                 raise NotImplementedError("Only re/im patterns supported")
         elif corr2.lower() in path[-10::]:
+            print(f'Loading beam from {path}')
             if 're' in path[-7::]:
                 corr2_re = load_fits(path)
             elif 'im' in path[-7::]:
@@ -308,6 +383,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     beam_amp = (corr1_re**2 + corr1_im**2 + corr2_re**2 + corr2_im**2)/2.0
 
     # get cube in correct shape for interpolation code
+    beam_amp = beam_amp[0]  # drop corr axis
     beam_amp = np.ascontiguousarray(np.transpose(beam_amp, (1, 2, 0))
                                     [:, :, :, None, None])
     # get cube info
@@ -357,8 +433,18 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
 
 def interpolate_beam(ll, mm, freqs, opts):
     """
-    Interpolate beam to image coordinates and optionally compute average
-    over time if MS is provoded
+    Interpolates the beam model to specified image coordinates and frequencies.
+    
+    If measurement set (MS) data is provided in the options, computes a time-averaged beam using direction-dependent effects (DDE) such as parallactic angle, antenna scaling, and pointing errors. Supports both Dask-based and NumPy-based interpolation depending on the workflow. Returns the interpolated beam cube reshaped to match the frequency and image coordinate dimensions.
+    
+    Args:
+        ll: 2D array of l (direction cosine) coordinates for the image grid.
+        mm: 2D array of m (direction cosine) coordinates for the image grid.
+        freqs: 1D array of frequencies at which to interpolate the beam.
+        opts: Options object containing beam model paths, MS information, and processing parameters.
+    
+    Returns:
+        A NumPy array of the interpolated beam, with shape (nfreq, *ll.shape).
     """
     nband = freqs.size
     # print("Interpolating beam", file=log)
@@ -369,6 +455,8 @@ def interpolate_beam(ll, mm, freqs, opts):
 
     # interpolate beam
     if use_dask:
+        # chunking is over time and antenna
+        from africanus.rime.dask import beam_cube_dde
         lm_source = da.from_array(lm_source, chunks=lm_source.shape)
         freqs = da.from_array(freqs, chunks=freqs.shape)
         # compute nthreads images at a time to avoid memory errors
@@ -377,6 +465,7 @@ def interpolate_beam(ll, mm, freqs, opts):
         nchunks = I.size
         I = np.append(I, ntimes)
         beam_image = np.zeros((ll.size, 1, nband), dtype=beam_amp.dtype)
+        ant_scale = da.from_array(ant_scale, chunks=(1, freqs.size, 2))
         for i in range(nchunks):
             ilow = I[i]
             ihigh = I[i+1]
@@ -393,9 +482,12 @@ def interpolate_beam(ll, mm, freqs, opts):
         # remove time axis
         beam_image = beam_image[:, 0, :]
     else:
+        from africanus.rime.fast_beam_cubes import beam_cube_dde
         beam_image = beam_cube_dde(beam_amp, beam_extents, bfreqs,
                                     lm_source, parangles, point_errs,
-                                    ant_scale, freqs).squeeze()
+                                    ant_scale, freqs) #.squeeze()
+        beam_image = beam_image[:, :, 0, :, 0, 0]
+        beam_image = np.mean(beam_image, axis=1)
 
 
 

@@ -17,6 +17,13 @@ def image_convolver():
     parser.add_argument('-image', "--image", type=str, required=True)
     parser.add_argument('-o', '--output-filename', type=str, required=True,
                         help="Path to output directory.")
+    parser.add_argument('-products', '--products', default='i', type=str,
+                        help="Outputs to write. Letter correspond to: \n"
+                        "c - restoring beam used for convolution \n"
+                        "i - convolved image \n"
+                        "b - average power beam \n"
+                        "w - beam**2 weight image to use for Mosaicing \n"
+                        "Default is to write only the convolved image")
     parser.add_argument('-pp', '--psf-pars', default=None, nargs='+', type=float,
                         help="Beam parameters matching FWHM of restoring beam "
                         "specified as emaj emin pa. \n"
@@ -83,7 +90,10 @@ def image_convolver():
             if key in hdr.keys():
                 emaj = hdr[key]
                 emin = hdr['BMIN' + str(i)]
-                pa = hdr['BPA' + str(i)]
+                try:
+                    pa = hdr['BPA' + str(i)]
+                except:
+                    pa = hdr['PA' + str(i)]
                 gausspari += ((emaj, emin, pa),)
     else:
         if 'BMAJ' in hdr.keys():
@@ -205,12 +215,29 @@ def image_convolver():
     outfile = opts.output_filename
 
     # save images
-    name = outfile + '.clean_psf.fits'
-    save_fits(name, gausskern, hdr, dtype=opts.out_dtype)
-    print(f"Wrote clean psf to {name}", file=log)
+    # save clean beam
+    if 'c' in opts.products:
+        name = outfile + '.clean_psf.fits'
+        save_fits(name, gausskern, hdr, dtype=opts.out_dtype)
+        print(f"Wrote clean psf to {name}", file=log)
 
-    name = outfile + '.convolved.fits'
-    save_fits(name, image, hdr, dtype=opts.out_dtype)
-    print(f"Wrote convolved image to {name}", file=log)
+    if 'i' in opts.products:
+        name = outfile + '.convolved.fits'
+        save_fits(name, image, hdr, dtype=opts.out_dtype)
+        print(f"Wrote convolved image to {name}", file=log)
+
+    if 'b' in opts.products:
+        if 'beam_image' not in locals():
+            raise ValueError("Cannot write power beam: no beam model provided")
+        name = outfile + '.power_beam.fits'
+        save_fits(name, beam_image, hdr, dtype=opts.out_dtype)
+        print(f"Wrote average power beam to {name}", file=log)
+
+    if 'w' in opts.products:
+        if 'beam_image' not in locals():
+            raise ValueError("Cannot write spatial weight: no beam model provided")
+        name = outfile + '.spatial_weight.fits'
+        save_fits(name, beam_image**2, hdr, dtype=opts.out_dtype)
+        print(f"Wrote spatial weight to {name}", file=log)
 
     print("All done here", file=log)
