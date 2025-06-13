@@ -775,21 +775,21 @@ def stitch_images(freq, im_list, eta=1e-3):
     return image, weight, info, freq
     
 
-from astropy.wcs import WCS
-from scipy.interpolate import RegularGridInterpolator
-from katpoint.projection import plane_to_sphere_sin
-def beam2sin(beam, lbeam, mbeam, hdr):
-    beamf = np.flipud(beam)
-    ll, mm = np.meshgrid(lbeam, mbeam, indexing='ij')
-    beomo = RegularGridInterpolator((lbeam, mbeam), beamf,
-                                    bounds_error=True, method='linear')
+# from astropy.wcs import WCS
+# from scipy.interpolate import RegularGridInterpolator
+# from katpoint.projection import plane_to_sphere_sin
+# def beam2sin(beam, lbeam, mbeam, hdr):
+#     beamf = np.flipud(beam)
+#     ll, mm = np.meshgrid(lbeam, mbeam, indexing='ij')
+#     beomo = RegularGridInterpolator((lbeam, mbeam), beamf,
+#                                     bounds_error=True, method='linear')
 
-    wcs = WCS(hdr)
-    # RA--SIN and DEC-SIN reference
-    ra0, dec0 = wcs.wcs.crval
-    nx, ny = wcs.array_shape
-    x_pix, y_pix = np.mgrid[0:nx, 0:ny]
-    ra, dec = wcs.pixel_to_world(x_pix, y_pix)
+#     wcs = WCS(hdr)
+#     # RA--SIN and DEC-SIN reference
+#     ra0, dec0 = wcs.wcs.crval
+#     nx, ny = wcs.array_shape
+#     x_pix, y_pix = np.mgrid[0:nx, 0:ny]
+#     ra, dec = wcs.pixel_to_world(x_pix, y_pix)
     
     
 
