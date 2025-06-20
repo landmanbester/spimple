@@ -11,14 +11,20 @@ import numpy as np
 from astropy.io import fits
 import warnings
 from spimple.utils import (load_fits, save_fits, data_from_header,
-                           interpolate_beam)
+                           interpolate_beam, set_header_info)
 from daskms import xds_from_ms, xds_from_table
 
 
 def power_beam_maker():
+    """
+    Interpolates a primary beam model onto the coordinate grid of a specified FITS image and saves the result as a new FITS file.
+    
+    This command-line tool extracts spatial and frequency coordinates from an input FITS image, interpolates the primary beam pattern using optional measurement set and beam model information, updates the FITS header with relevant frequency metadata, and writes the resulting beam cube to the specified output file.
+    """
     parser = argparse.ArgumentParser(description='Beam intrepolation tool.',
                                 formatter_class=argparse.RawTextHelpFormatter)
-    parser.add_argument('-image', "--image", type=str, required=True)
+    parser.add_argument('-image', "--image", type=str, required=True,
+                        help="A fits image providing the coordinates to interpolate to.")
     parser.add_argument('-ms', "--ms", nargs="+", type=str,
                         help="Mesurement sets used to make the image. \n"
                         "Used to get paralactic angles if doing primary beam correction")
@@ -77,9 +83,9 @@ def power_beam_maker():
     # interpolate primary beam to fits header and optionally average over time
     beam_image = interpolate_beam(xx, yy, freqs, opts)
 
+    # new header for cubes if ref_freqs or freq_axis differs
+    new_hdr = set_header_info(hdr, ref_freq, freq_axis)
+
     # save power beam
-    save_fits(opts.output_filename, beam_image, hdr)
+    save_fits(opts.output_filename, beam_image, new_hdr)
     print(f"Wrote interpolated beam cube to {opts.output_filename}", file=log)
-
-
-    return

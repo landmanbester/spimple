@@ -17,6 +17,13 @@ def image_convolver():
     parser.add_argument('-image', "--image", type=str, required=True)
     parser.add_argument('-o', '--output-filename', type=str, required=True,
                         help="Path to output directory.")
+    parser.add_argument('-products', '--products', default='i', type=str,
+                        help="Outputs to write. Letter correspond to: \n"
+                        "c - restoring beam used for convolution \n"
+                        "i - convolved image \n"
+                        "b - average power beam \n"
+                        "w - beam**2 weight image to use for Mosaicing \n"
+                        "Default is to write only the convolved image")
     parser.add_argument('-pp', '--psf-pars', default=None, nargs='+', type=float,
                         help="Beam parameters matching FWHM of restoring beam "
                         "specified as emaj emin pa. \n"
@@ -36,7 +43,7 @@ def image_convolver():
                         "Use power_beam_maker to make power beam "
                         "corresponding to image. ")
     parser.add_argument('-band', "--band", type=str, default='l',
-                        help="Band to use with JimBeam. L or UHF")
+                        help="Band to use with JimBeam. L, UHF or S")
     parser.add_argument('-pb-min', '--pb-min', type=float, default=0.05,
                         help="Set image to zero where pb falls below this value")
     parser.add_argument('-pf', '--padding-frac', type=float, default=0.5,
@@ -63,14 +70,18 @@ def image_convolver():
     l_coord -= ref_l
     m_coord, ref_m = data_from_header(hdr, axis=2)
     m_coord -= ref_m
-    if hdr["CTYPE4"].lower() == 'freq':
-        freq_axis = 4
-    elif hdr["CTYPE3"].lower() == 'freq':
-        freq_axis = 3
+    
+    if hdr["NAXIS"] >2:
+        if "CTYPE4" in hdr and hdr["CTYPE4"].lower() == 'freq':
+            freq_axis = 4
+        elif hdr["CTYPE3"].lower() == 'freq':
+            freq_axis = 3
+        else:
+            raise ValueError("Freq axis must be 3rd or 4th")
+        freqs, ref_freq = data_from_header(hdr, axis=freq_axis)
     else:
-        raise ValueError("Freq axis must be 3rd or 4th")
-    freqs, ref_freq = data_from_header(hdr, axis=freq_axis)
-
+        freqs = np.array([0])
+    
     nchan = freqs.size
     gausspari = ()
     if freqs.size > 1:
@@ -79,7 +90,10 @@ def image_convolver():
             if key in hdr.keys():
                 emaj = hdr[key]
                 emin = hdr['BMIN' + str(i)]
-                pa = hdr['BPA' + str(i)]
+                try:
+                    pa = hdr['BPA' + str(i)]
+                except:
+                    pa = hdr['PA' + str(i)]
                 gausspari += ((emaj, emin, pa),)
     else:
         if 'BMAJ' in hdr.keys():
@@ -151,6 +165,7 @@ def image_convolver():
     if imagei.ndim != 3:
         raise ValueError("Unsupported number of image dimensions")
     print('Convolving image', file=log)
+    
     image, gausskern = convolve2gaussres(imagei, xx, yy, gaussparf,
                                          opts.nthreads, gausspari,
                                          opts.padding_frac)
@@ -181,8 +196,13 @@ def image_convolver():
             from katbeam import JimBeam
             if opts.band.lower() == 'l':
                 beam = JimBeam('MKAT-AA-L-JIM-2020')
-            else:
+            elif opts.band.lower() == 'uhf':
                 beam = JimBeam('MKAT-AA-UHF-JIM-2020')
+            elif opts.band.lower() == 's':
+                beam = JimBeam('MKAT-AA-S-JIM-2020')
+            else:
+                raise ValueError(f"Unknown beam model for katbeam in band {opts.band}")
+
             beam_image = np.zeros(image.shape, dtype=opts.out_dtype)
             for v in range(freqs.size):
                 beam_image[v] = beam.I(xx, yy, freqs[v]/1e6)  # freqs in MHz
@@ -195,12 +215,29 @@ def image_convolver():
     outfile = opts.output_filename
 
     # save images
-    name = outfile + '.clean_psf.fits'
-    save_fits(name, gausskern, hdr, dtype=opts.out_dtype)
-    print(f"Wrote clean psf to {name}", file=log)
+    # save clean beam
+    if 'c' in opts.products:
+        name = outfile + '.clean_psf.fits'
+        save_fits(name, gausskern, hdr, dtype=opts.out_dtype)
+        print(f"Wrote clean psf to {name}", file=log)
 
-    name = outfile + '.convolved.fits'
-    save_fits(name, image, hdr, dtype=opts.out_dtype)
-    print(f"Wrote convolved image to {name}", file=log)
+    if 'i' in opts.products:
+        name = outfile + '.convolved.fits'
+        save_fits(name, image, hdr, dtype=opts.out_dtype)
+        print(f"Wrote convolved image to {name}", file=log)
+
+    if 'b' in opts.products:
+        if 'beam_image' not in locals():
+            raise ValueError("Cannot write power beam: no beam model provided")
+        name = outfile + '.power_beam.fits'
+        save_fits(name, beam_image, hdr, dtype=opts.out_dtype)
+        print(f"Wrote average power beam to {name}", file=log)
+
+    if 'w' in opts.products:
+        if 'beam_image' not in locals():
+            raise ValueError("Cannot write spatial weight: no beam model provided")
+        name = outfile + '.spatial_weight.fits'
+        save_fits(name, beam_image**2, hdr, dtype=opts.out_dtype)
+        print(f"Wrote spatial weight to {name}", file=log)
 
     print("All done here", file=log)

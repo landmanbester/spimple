@@ -16,6 +16,11 @@ import dask.array as da
 from africanus.model.spi.dask import fit_spi_components
 
 def spi_fitter():
+    """
+    Runs a command-line tool for spectral index fitting on radio astronomy image cubes.
+    
+    This function orchestrates the workflow for fitting spectral index (alpha) and reference intensity (I0) maps from multi-frequency radio interferometric image cubes. It handles argument parsing, model and residual image loading, PSF and beam parameter extraction, optional convolution, masking, thresholding, frequency band selection, component extraction, spectral fitting, and output of results as FITS files. The tool supports various options for beam modeling, channel weighting, and output product selection, and is designed for efficient processing of large datasets using Dask for parallelization.
+    """
     parser = argparse.ArgumentParser(description='Simple spectral index fitting tool.',
                                 formatter_class=argparse.RawTextHelpFormatter)
     parser.add_argument('-model', "--model", type=str, nargs='+')
@@ -43,7 +48,7 @@ def spi_fitter():
                         "Default of zero means use all threads")
     parser.add_argument('-pb-min', '--pb-min', type=float, default=0.15,
                         help="Set image to zero where pb falls below this value")
-    parser.add_argument('-products', '--products', default='aeikIcmrb', type=str,
+    parser.add_argument('-products', '--products', default='aeikIcmrbd', type=str,
                         help="Outputs to write. Letter correspond to: \n"
                         "a - alpha map \n"
                         "e - alpha error map \n"
@@ -54,6 +59,7 @@ def spi_fitter():
                         "m - convolved model \n"
                         "r - convolved residual \n"
                         "b - average power beam \n"
+                        "d - difference between data and fitted model \n"
                         "Default is to write all of them")
     parser.add_argument('-pf', "--padding-frac", default=0.5, type=float,
                         help="Padding factor for FFT's.")
@@ -67,7 +73,7 @@ def spi_fitter():
                         help="Per-channel freqs to use during fit to frequency axis\n"+
                         "These are automatically generated from the FITS header.\n"+
                         "Only specify if you have a non-standard FITS header.")
-    parser.add_argument('-rf', '--ref-freq', default=None, type=np.float64,
+    parser.add_argument('-rf', '--ref-freq', default=None, type=float,
                         help='Reference frequency where the I0 map is sought. \n'
                         "Will overwrite in fits headers of output.")
     parser.add_argument('-otype', '--out_dtype', default='f4', type=str,
@@ -94,7 +100,7 @@ def spi_fitter():
     parser.add_argument('-ct', '--corr-type', type=str, default='linear',
                         help="Correlation typ i.e. linear or circular. ")
     parser.add_argument('-band', "--band", type=str, default='l',
-                        help="Band to use with JimBeam. L or UHF")
+                        help="Band to use with JimBeam. L, UHF or S")
     parser.add_argument('-db', '--deselect-bands', default=None, nargs='+', type=int,
                         help="Indices of subbands to exclude from the fitting \n"
                         "By default, all the sub-bands are used for the residual image. \n"
@@ -219,7 +225,7 @@ def spi_fitter():
     print("Reference frequency is %3.2e Hz" % ref_freq, file=log)
 
     # LB - new header for cubes if ref_freqs differ
-    new_hdr = set_header_info(mhdr, ref_freq, freq_axis, opts, gaussparf)
+    new_hdr = set_header_info(mhdr, ref_freq, freq_axis, beampars=gaussparf)
 
     # save next to model if no outfile is provided
     outfile = opts.output_filename
@@ -250,13 +256,19 @@ def spi_fitter():
             beam_image = load_fits(opts.beam_model, dtype=opts.out_dtype).squeeze()
         elif opts.beam_model == "JimBeam":
             from katbeam import JimBeam
+            beam_image = []
             if opts.band.lower() == 'l':
                 beam = JimBeam('MKAT-AA-L-JIM-2020')
-            else:
+            elif opts.band.lower() == 'uhf':
                 beam = JimBeam('MKAT-AA-UHF-JIM-2020')
-            beam_image = np.zeros(model.shape, dtype=opts.out_dtype)
+            elif opts.band.lower() == 's':
+                beam = JimBeam('MKAT-AA-S-JIM-2020')
+            else:
+                raise ValueError(f"Unknown beam model for katbeam in band {opts.band}")
+            beam_image = np.zeros_like(model)
             for v in range(freqs.size):
-                beam_image[v] = beam.I(xx, yy, freqs[v]/1e6)  # freqs in MHz
+                beam_image.append(beam.I(xx, yy, freqs[v]/1e6))  # freqs in MHz
+            beam_image = np.stack(beam_image)
 
         else:
             beam_image = interpolate_beam(xx, yy, freqs, opts)
@@ -425,10 +437,11 @@ def spi_fitter():
         print(f"Channel weights: {weights}", file=log)
 
     ncomps, _ = fitcube.shape
+    cchunks = np.maximum(1, ncomps//opts.nthreads)
     fitcube = da.from_array(fitcube.astype(np.float64),
-                            chunks=(ncomps//opts.nthreads, nband))
+                            chunks=(cchunks, nband))
     beam_comps = da.from_array(beam_comps.astype(np.float64),
-                               chunks=(ncomps//opts.nthreads, nband))
+                               chunks=(cchunks, nband))
     weights = da.from_array(weights.astype(np.float64), chunks=(nband))
     freqsdask = da.from_array(freqs.astype(np.float64), chunks=(nband))
 
@@ -449,13 +462,24 @@ def spi_fitter():
     alpha_err_map[maskindices[:, 0], maskindices[:, 1]] = alpha_err
     i0map[maskindices[:, 0], maskindices[:, 1]] = Iref
     i0_err_map[maskindices[:, 0], maskindices[:, 1]] = i0_err
+    Irec_cube = i0map[None, :, :] * (freqs[:, None, None]/ref_freq)**alphamap[None, :, :]
+    fit_diff = np.zeros_like(model)
+    fit_diff[...] = np.nan
+    ix = maskindices[:, 0]
+    iy = maskindices[:, 1]
+    fit_diff[:, ix, iy] = model[:, ix, iy]/beam_image[:, ix, iy]
+    fit_diff[:, ix, iy] -= Irec_cube[:, ix, iy]
 
     if 'I' in opts.products:
         # get the reconstructed cube
-        Irec_cube = i0map[None, :, :] * \
-            (freqs[:, None, None]/ref_freq)**alphamap[None, :, :]
         name = outfile + '.Irec_cube.fits'
         save_fits(name, np.expand_dims(Irec_cube, axis=4 - stokes_axis), mhdr, dtype=opts.out_dtype)
+        print(f"Wrote reconstructed cube to {name}", file=log)
+
+    if 'd' in opts.products:
+        # get the reconstructed cube
+        name = outfile + '.fit_diff.fits'
+        save_fits(name, np.expand_dims(fit_diff, axis=4 - stokes_axis), mhdr, dtype=opts.out_dtype)
         print(f"Wrote reconstructed cube to {name}", file=log)
 
     # save alpha map
