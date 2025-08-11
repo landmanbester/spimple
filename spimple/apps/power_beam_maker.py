@@ -10,8 +10,9 @@ from omegaconf import OmegaConf
 import numpy as np
 from astropy.io import fits
 import warnings
-from spimple.utils import (load_fits, save_fits, data_from_header,
-                           interpolate_beam, set_header_info)
+from spimple.utils import interpolate_beam
+from spimple.fits import load_fits, save_fits, data_from_header, set_header_info
+                          
 from daskms import xds_from_ms, xds_from_table
 
 

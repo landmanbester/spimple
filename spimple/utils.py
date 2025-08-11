@@ -596,25 +596,6 @@ def stitch_images(freq, im_list, eta=1e-3):
         weight[mask] += beam[mask]**2
     weight += eta
     return image, weight, info, freq
-    
-
-# from astropy.wcs import WCS
-# from scipy.interpolate import RegularGridInterpolator
-# from katpoint.projection import plane_to_sphere_sin
-# def beam2sin(beam, lbeam, mbeam, hdr):
-#     beamf = np.flipud(beam)
-#     ll, mm = np.meshgrid(lbeam, mbeam, indexing='ij')
-#     beomo = RegularGridInterpolator((lbeam, mbeam), beamf,
-#                                     bounds_error=True, method='linear')
-
-#     wcs = WCS(hdr)
-#     # RA--SIN and DEC-SIN reference
-#     ra0, dec0 = wcs.wcs.crval
-#     nx, ny = wcs.array_shape
-#     x_pix, y_pix = np.mgrid[0:nx, 0:ny]
-#     ra, dec = wcs.pixel_to_world(x_pix, y_pix)
-
-
 
 
 def conjugate_gradient(A, b, x0=None, tol=1e-6, max_iter=100, report=20):
@@ -629,7 +610,6 @@ def conjugate_gradient(A, b, x0=None, tol=1e-6, max_iter=100, report=20):
    rsold = np.vdot(r, r)
    rs0 = rsold
    if rs0 < tol:
-       import ipdb; ipdb.set_trace()
        return x, 0  # already at minimum
    for i in range(max_iter):
        Ap = A(p)
@@ -645,7 +625,7 @@ def conjugate_gradient(A, b, x0=None, tol=1e-6, max_iter=100, report=20):
        p = beta * p - r
        rsold = rsnew
 
-       if i%report:
+       if i%report == 0:
            print(f"At {i} norm frac = {rsnew/rs0}")
    
    return x, i
