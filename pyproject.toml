@@ -1,6 +1,6 @@
 [project]
 name = "spimple"
-version = "0.0.4"
+version = "0.0.5"
 description = "Radio astronomy image post-processing tools"
 authors = [
     {name = "Landman Bester", email = "lbester@sarao.ac.za"}
@@ -47,7 +47,7 @@ build-backend = "hatchling.build"
 github_url = "https://github.com/landmanbester/spimple"
 
 [tool.tbump.version]
-current = "0.0.4"
+current = "0.0.5"
 
 # Example of a semver regexp.
 # Make sure this matches current_version before
