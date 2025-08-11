@@ -3,11 +3,20 @@ from ducc0.fft import good_size, r2c, c2r
 iFs = np.fft.ifftshift
 Fs = np.fft.fftshift
 from astropy.io import fits
+from astropy.wcs import WCS
 from glob import glob
 from africanus.rime import parallactic_angles
 from africanus.util.numba import jit
 from daskms import xds_from_ms, xds_from_table
 import dask.array as da
+from reproject import reproject_interp
+from reproject.mosaicking import find_optimal_celestial_wcs
+import xarray as xr
+from scipy.interpolate import RegularGridInterpolator
+from scipy import ndimage
+import ray
+from time import time
+from spimple.fits import save_fits, load_fits, set_wcs, data_from_header
 
 def str2bool(v):
     """
@@ -26,144 +35,38 @@ def str2bool(v):
         import argparse
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
-def to4d(data):
-    if data.ndim == 4:
-        return data
-    elif data.ndim == 2:
-        return data[None, None]
-    elif data.ndim == 3:
-        return data[None]
-    elif data.ndim == 1:
-        return data[None, None, None]
-    else:
-        raise ValueError("Only arrays with ndim <= 4 can be broadcast to 4D.")
 
-
-def data_from_header(hdr, axis=3, zero_ref=False):
-    npix = hdr['NAXIS' + str(axis)]
-    refpix = hdr['CRPIX' + str(axis)]
-    delta = hdr['CDELT' + str(axis)]
-    ref_val = hdr['CRVAL' + str(axis)]
-    return ref_val + np.arange(1 - refpix, 1 + npix - refpix) * delta, ref_val
-
-
-def load_fits(name, dtype=np.float32):
-    data = fits.getdata(name)
-    data = np.transpose(to4d(data)[:, :, ::-1], axes=(0, 1, 3, 2))
-    return np.require(data, dtype=dtype, requirements='C')
-
-
-def save_fits(name, data, hdr, overwrite=True, dtype=np.float32):
-    """
-    Saves a 4D NumPy array to a FITS file with the specified header.
-    
-    The data is transposed and reversed along the last axis to match FITS conventions, converted to Fortran-contiguous order, and written to disk.
-    
-    Args:
-        name: Output FITS file path.
-        data: Input array to save (will be broadcast to 4D if needed).
-        hdr: FITS header to use for the output file.
-        overwrite: If True, overwrite the file if it exists.
-        dtype: Data type for the output array.
-    """
-    hdu = fits.PrimaryHDU(header=hdr)
-    data = np.transpose(to4d(data), axes=(0, 1, 3, 2))[:, :, ::-1]
-    hdu.data = np.require(data, dtype=dtype, requirements='F')
-    hdu.writeto(name, overwrite=overwrite)
-
-
-def set_header_info(mhdr, ref_freq, freq_axis, beampars=None):
-    """
-    Creates a new FITS header with updated frequency axis and optional beam parameters.
-    
-    Copies selected header keys from the input header, sets the specified frequency axis to length 1 with the given reference frequency, and optionally adds beam parameters (`BMAJ`, `BMIN`, `BPA`) if provided.
-    
-    Args:
-        mhdr: Input FITS header to copy keys from.
-        ref_freq: Reference frequency value to set on the specified axis.
-        freq_axis: Axis index (3 or 4) to update with the reference frequency.
-        beampars: Optional tuple of (major axis, minor axis, position angle) for beam parameters.
-    
-    Returns:
-        A new astropy.io.fits.Header object with updated frequency and optional beam information.
-    """
-    hdr_keys = ['SIMPLE', 'BITPIX', 'NAXIS', 'NAXIS1', 'NAXIS2', 'NAXIS3',
-                'NAXIS4', 'CTYPE1', 'CTYPE2', 'CTYPE3', 'CTYPE4', 'CRPIX1',
-                'CRPIX2', 'CRPIX3', 'CRPIX4', 'CRVAL1', 'CRVAL2', 'CRVAL3',
-                'CRVAL4', 'CDELT1', 'CDELT2', 'CDELT3', 'CDELT4']
-
-    new_hdr = {}
-    for key in hdr_keys:
-        new_hdr[key] = mhdr[key]
-
-    if freq_axis == 3:
-        new_hdr["NAXIS3"] = 1
-        new_hdr["CRVAL3"] = ref_freq
-    elif freq_axis == 4:
-        new_hdr["NAXIS4"] = 1
-        new_hdr["CRVAL4"] = ref_freq
-
-    if beampars is not None:
-        new_hdr['BMAJ'] = beampars[0]
-        new_hdr['BMIN'] = beampars[1]
-        new_hdr['BPA'] = beampars[2]
-
-    new_hdr = fits.Header(new_hdr)
-
-    return new_hdr
-
-
-def Gaussian2D(xin, yin, GaussPar=(1., 1., 0.), normalise=True):
-    """
-    Generates a 2D elliptical Gaussian kernel on a specified coordinate grid.
-    
-    Args:
-        xin: 2D array of x-coordinates.
-        yin: 2D array of y-coordinates.
-        GaussPar: Tuple of (major axis FWHM, minor axis FWHM, position angle in degrees).
-        normalise: If True, normalizes the kernel so its sum is 1.
-    
-    Returns:
-        2D NumPy array representing the Gaussian kernel, matching the shape of the input grids.
-    
-    Raises:
-        ValueError: If input coordinate arrays are not both 2D or do not have matching shapes.
-    
-    The kernel is computed only within a radius of five times the major axis. FWHM parameters are converted to standard deviation for the Gaussian calculation. If either axis is zero, the kernel is filled with NaNs.
-    """
-    if xin.ndim != 2:
-        raise ValueError("Input coordinates must be 2D")
-    if yin.shape != xin.shape:
-        raise ValueError("x and u coordinates must be defined on the same "
-                         "grid")
-    S0, S1, PA = GaussPar
-    Smaj = np.maximum(S0, S1)
-    Smin = np.minimum(S0, S1)
-
-    # hackaround for runtime warning
-    if 0 in (Smaj, Smin):
-        print("Nan values have been encountered. Subverting RuntimeWarning")
-        A =  np.array([[np.nan, 0],
-                  [0, np.nan]])
-    else:
-        A = np.array([[1. / Smin ** 2, 0],
-                  [0, 1. / Smaj ** 2]])
-
-
-    c, s, t = np.cos, np.sin, np.deg2rad(-PA)
-    R = np.array([[c(t), -s(t)],
-                  [s(t), c(t)]])
+def Gaussian2D(xin, yin, GaussPar=(1., 1., 0.), normalise=True, nsigma=5):
+    ''' 
+    xin         - grid of x coordinates
+    yin         - grid of y coordinates
+    GaussPar    - (emaj, emin, pa) with emaj/emin in units x and pa in radians.
+    normalise   - normalise kernel to have volume 1
+    nsigma      - compute kernel out to this many sigmas
+    '''
+    Smaj, Smin, PA = GaussPar
+    A = np.array([[1. / Smaj ** 2, 0],
+                  [0, 1. / Smin ** 2]])
+    # R = np.array([[np.cos(PA), -np.sin(PA)],
+    #               [np.sin(PA), np.cos(PA)]])
+    # this parametrisation is equivalent to the above with
+    # t = np.pi/2 - pa
+    # use this for compatibility with fits 
+    R = np.array([[np.sin(PA), -np.cos(PA)],
+                  [np.cos(PA), np.sin(PA)]])
     A = np.dot(np.dot(R.T, A), R)
     sOut = xin.shape
     # only compute the result out to 5 * emaj
-    extent = (5 * Smaj)**2
-    idx, idy = np.where(xin**2 + yin**2 <= extent)
-    x = np.array([xin[idx, idy].ravel(), yin[idx, idy].ravel()])
+    extent = (nsigma * Smaj)**2
+    xflat = xin.squeeze()
+    yflat = yin.squeeze()
+    idx, idy = np.where(xflat**2 + yflat**2 <= extent)
+    x = np.array([xflat[idx, idy].ravel(), yflat[idx, idy].ravel()])
     R = np.einsum('nb,bc,cn->n', x.T, A, x)
     # need to adjust for the fact that GaussPar corresponds to FWHM
-    fwhm_conv = 2*np.sqrt(2*np.log(2))
-    tmp = np.exp(-fwhm_conv*R)
-    gausskern = np.zeros(xin.shape, dtype=np.float64)
+    fwhm_conv = 2 * np.sqrt(2 * np.log(2))
+    tmp = np.exp(-fwhm_conv * R)
+    gausskern = np.zeros(xflat.shape, dtype=np.float64)
     gausskern[idx, idy] = tmp
 
     if normalise:
@@ -419,8 +322,8 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     freq0 = beam_hdr['CRVAL3']
     bfreqs = freq0 + np.arange(1 - refpix, 1 + nchan - refpix) * delta
     if bfreqs[0] > freqs[0] or bfreqs[-1] < freqs[-1]:
-        warnings.warn("The supplied beam does not have sufficient "
-                       "bandwidth. Beam frequencies:", file=log)
+        raise ValueError("The supplied beam does not have sufficient "
+                         f"bandwidth. min={bfreqs.min()}, max={bfreqs.max()}")
         # with np.printoptions(precision=2):
         #     print(bfreqs, file=log)
 
@@ -494,3 +397,235 @@ def interpolate_beam(ll, mm, freqs, opts):
     # swap source and freq axes and reshape to image shape
     beam_source = np.transpose(beam_image, axes=(1, 0))
     return beam_source.squeeze().reshape((freqs.size, *ll.shape))
+
+
+def mosaic_info(im_list, oname, ref_image=None):
+    if ref_image is not None:
+        raise NotImplementedError("Reference image not supported yet")
+    wcss = []
+    out_names = []
+    freqs = []
+    flatfreqs = []
+    shapes = []
+    basename = oname.removesuffix('.fits')
+    for imnum, im in enumerate(im_list):
+        hdr = fits.getheader(im)
+        nu = data_from_header(hdr, axis=3)[0]
+        freqs.append(nu)
+        flatfreqs.extend(nu)
+        wcsi = WCS(hdr).dropaxis(-1).dropaxis(-1)
+        wcss.append(wcsi)
+        nchan = hdr['NAXIS3']
+        ncorr = hdr['NAXIS4']
+        shapes.append((hdr['NAXIS1'],hdr['NAXIS2']))
+        for c in range(ncorr):
+            for f in range(nchan):
+                out_names.append(f'{basename}_im{imnum}_pol{c}_ch{f}.zarr')
+    nu = np.array(flatfreqs)
+    ufreqs = np.unique(nu)
+    # get domain of intrinsic image
+    ref_wcs, shape_out = find_optimal_celestial_wcs(
+                                    list(zip(shapes, wcss)),
+                                    projection='SIN')
+    ref_wcs.array_shape = (shape_out[0], shape_out[1])
+
+    return ref_wcs, ufreqs, out_names
+
+
+@ray.remote
+def project(im, imnum, ref_wcs, beam, oname, band='L', method='interp'):
+    if method != 'interp':
+        raise NotImplementedError("Only 'interp' method supported for now")
+    
+    # output shape
+    nxo, nyo = ref_wcs.array_shape
+    
+    # interpolate beam
+    bds = xr.open_zarr(beam, chunks=None)
+    beam = bds.BEAM.values
+    l_beam = bds.l_beam.values
+    m_beam = bds.m_beam.values
+    bfreq = bds.chan.values
+
+    # make the power beam
+    pbeam = ((beam[0]*beam[0].conj()).real + (beam[-1]*beam[-1].conj()).real)/2.0
+    
+    # this is cheap, evaluation is more expensive
+    beamo = RegularGridInterpolator(
+                            (bfreq, l_beam, m_beam),
+                            pbeam,
+                            bounds_error=False,
+                            fill_value=None,
+                            method='linear')
+    
+    cell_x, cell_y = ref_wcs.wcs.cdelt
+    l_im = (-(nxo)//2 + np.arange(nxo)) * cell_x
+    m_im = (-(nyo)//2 + np.arange(nyo)) * cell_y
+    im_coords = {
+        'l': ('l', l_im),
+        'm': ('m', m_im),
+    }
+
+    # image = load_fits(im)
+    image = fits.getdata(im)
+    ncorr, nchan, nx, ny = image.shape
+    hdr = fits.getheader(im)
+    freq, _ = data_from_header(hdr, axis=3)
+    wcs = WCS(hdr).dropaxis(-1).dropaxis(-1)
+    cxi, cyi = wcs.wcs.cdelt
+    nx, ny = wcs.array_shape
+    l = (-(nx)//2 + np.arange(nx)) * cxi
+    m = (-(ny)//2 + np.arange(ny)) * cyi
+    ll, mm = np.meshgrid(l, m, indexing='ij')
+    
+    basename = oname.removesuffix('.fits')
+    # TODO - make these in parallel
+    for c in range(ncorr):
+        for f in range(nchan):
+            bdata = np.zeros((nx, ny), dtype=np.float64)
+            # ti = time()
+            beami = beamo((freq[c], ll, mm))
+            # print('Interp ', time() - ti)
+            # ti = time()
+            step = 25
+            angles = np.linspace(0, 359, step)
+            for angle in angles:
+                bdata += ndimage.rotate(beami, angle,
+                                        reshape=False,
+                                        order=1,
+                                        mode='nearest')
+            bdata /= angles.size
+            # print('azimuthal average ', time() - ti)
+            # project beam
+            # ti = time()
+            pbeam, footprint = reproject_interp((bdata, wcs),
+                                                ref_wcs,
+                                                shape_out=(nxo, nyo),
+                                                block_size='auto',
+                                                parallel=4)
+            mask = footprint > 0
+            pbeam[~mask] = 0
+            # print('beam project ', time() - ti)
+            
+            # project image
+            # ti = time()
+            pdata, _ = reproject_interp((image[c, f], wcs),
+                                        ref_wcs,
+                                        shape_out=(nxo, nyo),
+                                        block_size='auto',
+                                        parallel=4)
+            # print('Image project ', time() - ti)
+
+            im_attrs = {
+            'freq': freq[c],
+            }
+
+            data_vars = {
+                'IMAGE': (('l','m'), pdata),
+                'BEAM': (('l', 'm'), pbeam),
+                'MASK': (('l', 'm'), mask)
+            }
+
+            ds = xr.Dataset(data_vars,
+                            coords=im_coords,
+                            attrs=im_attrs).chunk({'l': 512, 'm': 512})
+            
+            ds_name = f'{basename}_im{imnum}_pol{c}_ch{f}.zarr'
+            ds.to_zarr(ds_name,
+                       compute=True, mode='w',
+                       consolidated=False)
+            
+            
+            # hdri = wcs.to_header()
+            # hdu = fits.PrimaryHDU(header=hdri)
+            # hdu.data = image[c, f]
+            # fname = ds_name.removesuffix('.zarr') + '_image.fits'
+            # hdu.writeto(fname, overwrite=True)
+            # hdu.data = bdata
+            # fname = ds_name.removesuffix('.zarr') + '_beam.fits'
+            # hdu.writeto(fname, overwrite=True)
+
+            # ref_hdr = ref_wcs.to_header()
+            # hdu = fits.PrimaryHDU(header=ref_hdr)
+            # hdu.data = pdata
+            # fname = ds_name.removesuffix('.zarr') + '_pimage.fits'
+            # hdu.writeto(fname, overwrite=True)
+            # hdu.data = pbeam
+            # fname = ds_name.removesuffix('.zarr') + '_pbeam.fits'
+            # hdu.writeto(fname, overwrite=True)
+
+    return imnum
+            
+
+@ray.remote
+def stitch_images(freq, im_list, eta=1e-3):
+    # get all datasets in current plane
+    xds = []
+    for im in im_list:
+        ds = xr.open_zarr(im, chunks=None,
+                          consolidated=False)
+        if ds.freq == freq:
+            xds.append(ds)
+    
+    # accumulate
+    nx = xds[0].l.size
+    ny = xds[0].m.size
+    y = np.zeros((nx, ny))
+    for ds in xds:
+        mask = ds.MASK.values
+        beam = ds.BEAM.values
+        image = ds.IMAGE.values
+        y[mask] += beam[mask]*image[mask]
+    ds = ds.drop_vars(('IMAGE'))
+
+    def hess(x):
+        out = np.zeros((nx, ny))
+        for ds in xds:
+            mask = ds.MASK.values
+            beam = ds.BEAM.values
+            res = beam**2 * x
+            out[mask] += res[mask]
+        return out + eta * x
+    
+    image, info = conjugate_gradient(hess, y, max_iter=10)
+
+    weight = np.zeros((nx, ny))
+    for ds in xds:
+        mask = ds.MASK.values
+        beam = ds.BEAM.values
+        weight[mask] += beam[mask]**2
+    weight += eta
+    return image, weight, info, freq
+
+
+def conjugate_gradient(A, b, x0=None, tol=1e-6, max_iter=100, report=20):
+   n = b.shape
+   if x0 is None:
+       x = np.zeros(n)
+   else:
+       x = x0.copy()
+   
+   r = A(x) - b
+   p = -r
+   rsold = np.vdot(r, r)
+   rs0 = rsold
+   if rs0 < tol:
+       return x, 0  # already at minimum
+   for i in range(max_iter):
+       Ap = A(p)
+       alpha = rsold / np.vdot(p, Ap)
+       x = x + alpha * p
+       r = r + alpha * Ap
+       rsnew = np.vdot(r, r)
+       
+       if np.sqrt(rsnew) < tol:
+           break
+           
+       beta = rsnew / rsold
+       p = beta * p - r
+       rsold = rsnew
+
+       if i%report == 0:
+           print(f"At {i} norm frac = {rsnew/rs0}")
+   
+   return x, i

@@ -9,8 +9,9 @@ import argparse
 from omegaconf import OmegaConf
 import numpy as np
 from astropy.io import fits
-from spimple.utils import (load_fits, save_fits, convolve2gaussres, data_from_header,
-                           set_header_info, str2bool, interpolate_beam)
+from spimple.utils import (convolve2gaussres, str2bool, interpolate_beam)
+from spimple.fits import (load_fits, save_fits, data_from_header,
+                          set_header_info) 
 import dask
 import dask.array as da
 from africanus.model.spi.dask import fit_spi_components

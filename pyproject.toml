@@ -1,34 +1,90 @@
-[tool.poetry]
+[project]
 name = "spimple"
 version = "0.0.4"
 description = "Radio astronomy image post-processing tools"
-authors = ["Landman Bester <lbester@sarao.ac.za>"]
+authors = [
+    {name = "Landman Bester", email = "lbester@sarao.ac.za"}
+]
 readme = "README.md"
-homepage = "https://github.com/landmanbester/spimple"
-license = "MIT"
+license = {text = "MIT"}
+requires-python = ">=3.10, <3.13"
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+dependencies = [
+    "omegaconf",
+    "katbeam",
+    "pyscilog>=0.1.2",
+    "codex-africanus[complete]",
+    "dask-ms[xarray]>=0.2.22",
+    "dask[array]<=2024.10",
+    "reproject",
+    "ray[default]",
+]
 
-[tool.poetry.dependencies]
-python = ">=3.10, <3.13"
-omegaconf = "*"
-katbeam = "*"
-pyscilog = "^0.1.2"
-codex-africanus = {extras = ["complete"], version = "*"}
-dask-ms = {extras = ["xarray"], version = ">=0.2.22"}
-dask = {extras = ["array"], version = "<=2024.10"}
+[project.urls]
+Homepage = "https://github.com/landmanbester/spimple"
 
-[tool.poetry.group.dev.dependencies]
-pytest = "^8.0.0"
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "tbump>=6.11.0",
+]
 
-[tool.poetry.scripts]
+[project.scripts]
 spimple-imconv = "spimple.apps.image_convolver:image_convolver"
 spimple-spifit = "spimple.apps.spi_fitter:spi_fitter"
 spimple-binterp = "spimple.apps.power_beam_maker:power_beam_maker"
+spimple-mosaic = "spimple.apps.mosaic:mosaic"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.tbump]
+github_url = "https://github.com/landmanbester/spimple"
+
+[tool.tbump.version]
+current = "0.0.4"
+
+# Example of a semver regexp.
+# Make sure this matches current_version before
+# using tbump
+regex = '''
+  (?P<major>\d+)
+  \.
+  (?P<minor>\d+)
+  \.
+  (?P<patch>\d+)
+  '''
+
+[tool.tbump.git]
+message_template = "Bump to {new_version}"
+tag_template = "v{new_version}"
+
+# For each file to patch, add a [[tool.tbump.file]] config
+# section containing the path of the file, relative to the
+# tbump.toml location.
+[[tool.tbump.file]]
+src = "pyproject.toml"
+search = 'version = "{current_version}"'
+
+[[tool.tbump.file]]
+src = "spimple/__init__.py"
+search = "__version__='{current_version}'"
+
+# You can specify a list of commands to
+# run after the files have been patched
+# and before the git commit is made
+
+#  [[tool.tbump.before_commit]]
+#  name = "check changelog"
+#  cmd = "grep -q {new_version} Changelog.rst"
+
+# Or run some commands after the git tag and the branch
+# have been pushed:
+#  [[tool.tbump.after_push]]
+#  name = "publish"
+#  cmd = "./publish.sh"
