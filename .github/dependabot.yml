@@ -1,0 +1,58 @@
+version: 2
+updates:
+  # Enable version updates for pip/PyPI dependencies
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "landmanbester"
+    assignees:
+      - "landmanbester"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    groups:
+      # Group minor and patch updates for core dependencies
+      core-dependencies:
+        patterns:
+          - "astropy*"
+          - "dask*"
+          - "codex-africanus*"
+          - "katbeam*"
+          - "omegaconf*"
+          - "pyscilog*"
+          - "reproject*"
+          - "ray*"
+        update-types:
+          - "minor"
+          - "patch"
+      # Group development dependencies
+      dev-dependencies:
+        patterns:
+          - "pytest*"
+          - "tbump*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # Enable version updates for GitHub Actions
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "UTC"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "landmanbester"
+    assignees:
+      - "landmanbester"
+    commit-message:
+      prefix: "ci"
+      include: "scope"
