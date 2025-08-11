@@ -322,8 +322,8 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     freq0 = beam_hdr['CRVAL3']
     bfreqs = freq0 + np.arange(1 - refpix, 1 + nchan - refpix) * delta
     if bfreqs[0] > freqs[0] or bfreqs[-1] < freqs[-1]:
-        warnings.warn("The supplied beam does not have sufficient "
-                       "bandwidth. Beam frequencies:", file=log)
+        raise ValueError("The supplied beam does not have sufficient "
+                         f"bandwidth. min={bfreqs.min()}, max={bfreqs.max()}")
         # with np.printoptions(precision=2):
         #     print(bfreqs, file=log)
 
