@@ -40,8 +40,8 @@ spimple-binterp = "spimple.apps.power_beam_maker:power_beam_maker"
 spimple-mosaic = "spimple.apps.mosaic:mosaic"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.tbump]
 github_url = "https://github.com/landmanbester/spimple"
