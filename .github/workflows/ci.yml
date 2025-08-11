@@ -1,25 +1,32 @@
-name: spimple Workflow
+name: CI/CD
 
-on: [pull_request]
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+    tags:
+      - '**'
 
 jobs:
   test:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ ubuntu-22.04, ubuntu-24.04 ]
+        os: [ubuntu-22.04, ubuntu-24.04]
         python-version: ["3.10", "3.11", "3.12"]
 
     steps:
-      - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
-        with:
-          python-version: ${{ matrix.python-version}}
-
       - name: Checkout source
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 1
+          fetch-depth: 0
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Install Poetry
         uses: snok/install-poetry@v1
@@ -28,7 +35,15 @@ jobs:
           virtualenvs-create: true
           virtualenvs-in-project: true
 
+      - name: Load cached venv
+        id: cached-poetry-dependencies
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/poetry.lock') }}
+
       - name: Install dependencies
+        if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
         run: poetry install --with dev
 
       - name: Run tests
@@ -37,8 +52,35 @@ jobs:
   deploy:
     needs: [test]
     runs-on: ubuntu-latest
+    if: >
+      github.event_name == 'push' &&
+      (startsWith(github.ref, 'refs/tags/') ||
+       github.ref == 'refs/heads/master' ||
+       github.ref == 'refs/heads/main')
 
     steps:
-      - name: Deploy Step
-        run: >
-          echo "Deploying PyPI"
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Poetry
+        uses: snok/install-poetry@v1
+        with:
+          version: latest
+          virtualenvs-create: true
+          virtualenvs-in-project: true
+
+      - name: Build distributions
+        run: poetry build
+
+      - name: Publish distribution 📦 to PyPI
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          password: ${{ secrets.SPIMPLE_TOKEN }}
