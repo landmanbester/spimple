@@ -19,7 +19,7 @@ dependencies = [
     "pyscilog>=0.1.2",
     "codex-africanus[complete]",
     "dask-ms[xarray]>=0.2.22",
-    "dask[array]<=2024.10",
+    "dask[array]<=2025.7.0",
     "reproject",
     "ray[default]",
 ]
