@@ -8,7 +8,7 @@ Fs = np.fft.fftshift
 from pathlib import Path
 
 from africanus.rime import parallactic_angles
-from africanus.rime.dask import beam_cube_dde_dask
+from africanus.rime.dask import beam_cube_dde as beam_cube_dde_dask
 from africanus.rime.fast_beam_cubes import beam_cube_dde
 from africanus.util.numba import jit
 from astropy.io import fits
