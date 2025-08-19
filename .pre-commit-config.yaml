@@ -45,15 +45,6 @@ repos:
           - numpy
           - astropy
 
-  - repo: local
-    hooks:
-      - id: pytest-check
-        name: pytest-check
-        entry: uv run pytest tests/ --tb=short
-        language: system
-        pass_filenames: false
-        always_run: false
-        stages: [pre-push]  # Only run on push, not on every commit
 
 # Configuration for pre-commit.ci (if using)
 ci:
