@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Spimple is a radio astronomy image post-processing tool for spectral index fitting. The package provides four main command-line executables:
 
 - `spimple-spifit`: Fits spectral index models to image cubes with optional convolution and primary beam correction
-- `spimple-imconv`: Convolves images to common resolution with optional primary beam correction  
+- `spimple-imconv`: Convolves images to common resolution with optional primary beam correction
 - `spimple-binterp`: Primary beam interpolation and conversion to power beams
 - `spimple-mosaic`: Mosaics multiple FITS images together onto a common coordinate grid
 
