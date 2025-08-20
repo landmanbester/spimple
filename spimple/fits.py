@@ -33,7 +33,7 @@ def load_fits(name, dtype=np.float32):
     return np.require(data, dtype=dtype, requirements="C")
 
 
-def save_fits(data, name, hdr, overwrite=True, dtype=np.float32, beams_hdu=None):
+def save_fits(name, data, hdr, overwrite=True, dtype=np.float32, beams_hdu=None):
     hdu = fits.PrimaryHDU(header=hdr)
     data = np.transpose(to4d(data), axes=(1, 0, 3, 2))
     hdu.data = np.require(data, dtype=dtype, requirements="F")
