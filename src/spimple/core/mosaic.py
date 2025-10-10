@@ -1,13 +1,13 @@
 #!/usr/bin/env python
 
 import multiprocessing
-import time
 from pathlib import Path
+import time
 
+from astropy.io import fits
 import numpy as np
 import pyscilog
 import ray
-from astropy.io import fits
 
 from spimple.fits import set_wcs
 from spimple.utils import mosaic_info, project, stitch_images
@@ -107,9 +107,7 @@ def mosaic(
         print("Projecting images onto common wcs", file=log)
         tasks = []
         for imnum, im in enumerate(image_list):
-            fut = project.remote(
-                im, imnum, ref_wcs, beam_model, output_filename
-            )
+            fut = project.remote(im, imnum, ref_wcs, beam_model, output_filename)
             tasks.append(fut)
 
         # Process tasks as they complete
@@ -141,8 +139,7 @@ def mosaic(
         for task in ready:
             image, weight, info, freq = ray.get(task)
             print(
-                f"Conjugate gradient completed after {info} "
-                f"iterations for freq = {freq}",
+                f"Conjugate gradient completed after {info} iterations for freq = {freq}",
                 file=log,
             )
             c = np.nonzero(ufreqs == freq)[0]

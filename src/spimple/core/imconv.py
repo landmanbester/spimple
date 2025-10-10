@@ -3,10 +3,10 @@
 import multiprocessing
 from pathlib import Path
 
-import numpy as np
-import pyscilog
 from astropy.io import fits
 from katbeam import JimBeam
+import numpy as np
+import pyscilog
 
 from spimple.core.fits import data_from_header, load_fits, save_fits
 from spimple.core.utils import convolve2gaussres
@@ -29,7 +29,6 @@ def imconv(
     padding_frac: float = 0.5,
     out_dtype: str = "f4",
 ):
-
     pyscilog.log_to_file("image_convolver.log")
 
     if not nthreads:
@@ -93,8 +92,7 @@ def imconv(
 
     if len(gausspari) == 0:
         print(
-            "No psf parameters in fits file. "
-            "Convolving model to resolution specified by psf-pars.",
+            "No psf parameters in fits file. Convolving model to resolution specified by psf-pars.",
             file=log,
         )
         gaussparf = tuple(psf_pars)
@@ -116,13 +114,9 @@ def imconv(
         gaussparf = tuple(psf_pars)
         for gp in gausspari:
             if gp[0] > gaussparf[0]:
-                raise ValueError(
-                    "Target resolution cannot be smaller than original. Axis 0"
-                )
+                raise ValueError("Target resolution cannot be smaller than original. Axis 0")
             if gp[1] > gaussparf[1]:
-                raise ValueError(
-                    "Target resolution cannot be smaller than original. Axis 1"
-                )
+                raise ValueError("Target resolution cannot be smaller than original. Axis 1")
 
     if circ_psf:
         e = np.maximum(gaussparf[0], gaussparf[1])
@@ -159,9 +153,7 @@ def imconv(
         raise ValueError("Unsupported number of image dimensions")
     print("Convolving image", file=log)
 
-    image_out, gausskern = convolve2gaussres(
-        imagei, xx, yy, gaussparf, nthreads, gausspari, padding_frac
-    )
+    image_out, gausskern = convolve2gaussres(imagei, xx, yy, gaussparf, nthreads, gausspari, padding_frac)
 
     # load beam and correct
     if beam_model is not None:

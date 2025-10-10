@@ -13,15 +13,13 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
-
-[project.urls]
-Homepage = "https://github.com/landmanbester/spimple"
-
-packages = [{include = "spimple", from = "src"}]
 dependencies = [
     "typer>=0.12.0",
     "hip-cargo @ git+https://github.com/landmanbester/hip-cargo.git@demotools",
 ]
+
+[project.urls]
+Homepage = "https://github.com/landmanbester/spimple"
 
 [project.optional-dependencies]
 # Full scientific stack
@@ -35,7 +33,6 @@ full = [
     "ray[default]",
 ]
 
-[project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "tbump>=6.11.0",
@@ -219,13 +216,16 @@ ignore = [
     "E402",    # Module level import not at top of file
 
     # Type checking imports
-    "TCH001",  # Move application import into TYPE_CHECKING block
-    "TCH002",  # Move third-party import into TYPE_CHECKING block
-    "TCH003",  # Move standard library import into TYPE_CHECKING block
+    "TC001",  # Move application import into TYPE_CHECKING block
+    "TC002",  # Move third-party import into TYPE_CHECKING block
+    "TC003",  # Move standard library import into TYPE_CHECKING block
 
     "TRY003",   # Avoid specifying long messages outside the exception classifiers
     "EM101",    # Exception must not be a string literal, assign to variable first
     "EM102",    # Exception must not use an f-string literal, assign to variable first
+
+    # Lazy imports are intentional for performance
+    "PLC0415",  # import should be at the top-level of a file (conflicts with lazy imports)
 
 ]
 
@@ -304,7 +304,7 @@ max-statements = 80
 # Test files can use magic numbers and have complex fixtures
 "tests/*.py" = ["PLR2004", "S101", "PLR0913", "PLR0915"]
 # Scripts can have more relaxed rules
-"scripts/*.py" = ["T201", "PLR2004", "INP001"]
+"scripts/*.py" = ["T201", "PLR2004", "INP001", "S603", "S607"]
 # Notebooks can have more relaxed rules
 "*.ipynb" = ["T201", "E402", "F401", "PLR2004"]
 

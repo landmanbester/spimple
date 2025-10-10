@@ -1,46 +1,47 @@
 from pathlib import Path
 from typing import Annotated, Literal
 
-import typer
 from hip_cargo import stimela_cab, stimela_output
 from hip_cargo.callbacks import expand_patterns
+import typer
+
 
 @stimela_cab(
     name="binterp",
     info="Interpolate and create power beam.",
-    policies={'pass_missing_as_none': True},
+    policies={"pass_missing_as_none": True},
 )
-@stimela_output(
-    name="output_filename",
-    dtype="File",
-    info="{current.output_filename}.fits"
-)
+@stimela_output(name="output_filename", dtype="File", info="{current.output_filename}.fits")
 def binterp(
-    image: Annotated[list[str],
-                     typer.Option(...,
-                                  callback=expand_patterns,
-                                  help="A fits image providing the coordinates to interpolate to")],
-    output_filename: Annotated[Path,
-                               typer.Option(...,
-                                            help="Path to output directory")],
-    ms: Annotated[str | None,
-                  typer.Option(help="Measurement sets used to make the image. "
-                                    "Used to get paralactic angles if doing primary beam correction. "
-                                    "Pass as comma-separated string.")] = None,
-    field: Annotated[int,
-                     typer.Option(help="Field ID")] = 0,
-    beam_model: Annotated[str | None,
-                          typer.Option(help="Fits beam model to use. "
-                                            "It is assumed that the pattern is path_to_beam/name_corr_re/im.fits. "
-                                            "Provide only the path up to name e.g. /home/user/beams/meerkat_lband. "
-                                            "Patterns matching corr are determined automatically. "
-                                            "Only real and imaginary beam models currently supported.")] = None,
-    sparsify_time: Annotated[int,
-                             typer.Option(help="Used to select a subset of time")] = 10,
-    nthreads: Annotated[int | None,
-                        typer.Option(help="Number of threads to use. Defaults to all available")] = None,
-    corr_type: Annotated[Literal["linear", "circular"],
-                         typer.Option(help="Correlation type i.e. linear or circular")] = "linear",
+    image: Annotated[
+        list[str],
+        typer.Option(..., callback=expand_patterns, help="A fits image providing the coordinates to interpolate to"),
+    ],
+    output_filename: Annotated[Path, typer.Option(..., help="Path to output directory")],
+    ms: Annotated[
+        str | None,
+        typer.Option(
+            help="Measurement sets used to make the image. "
+            "Used to get paralactic angles if doing primary beam correction. "
+            "Pass as comma-separated string."
+        ),
+    ] = None,
+    field: Annotated[int, typer.Option(help="Field ID")] = 0,
+    beam_model: Annotated[
+        str | None,
+        typer.Option(
+            help="Fits beam model to use. "
+            "It is assumed that the pattern is path_to_beam/name_corr_re/im.fits. "
+            "Provide only the path up to name e.g. /home/user/beams/meerkat_lband. "
+            "Patterns matching corr are determined automatically. "
+            "Only real and imaginary beam models currently supported."
+        ),
+    ] = None,
+    sparsify_time: Annotated[int, typer.Option(help="Used to select a subset of time")] = 10,
+    nthreads: Annotated[int | None, typer.Option(help="Number of threads to use. Defaults to all available")] = None,
+    corr_type: Annotated[
+        Literal["linear", "circular"], typer.Option(help="Correlation type i.e. linear or circular")
+    ] = "linear",
 ):
     """
     Interpolate a primary beam model onto the coordinate grid of a FITS image.
@@ -55,7 +56,7 @@ def binterp(
     # Parse ms if provided as comma-separated string
     ms_list = None
     if ms is not None:
-        ms_list = [x.strip() for x in ms.split(',')]
+        ms_list = [x.strip() for x in ms.split(",")]
 
     # Convert Path types to strings for core function
     beam_model_str = str(beam_model) if beam_model is not None else None

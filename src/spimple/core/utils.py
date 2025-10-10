@@ -1,10 +1,3 @@
-import argparse
-
-from ducc0.fft import c2r, good_size, r2c
-import numpy as np
-
-iFs = np.fft.ifftshift
-Fs = np.fft.fftshift
 from pathlib import Path
 
 from africanus.rime import parallactic_angles
@@ -15,6 +8,8 @@ from astropy.io import fits
 from astropy.wcs import WCS
 import dask.array as da
 from daskms import xds_from_ms, xds_from_table
+from ducc0.fft import c2r, good_size, r2c
+import numpy as np
 import ray
 from reproject import reproject_interp
 from reproject.mosaicking import find_optimal_celestial_wcs
@@ -22,23 +17,10 @@ from scipy import ndimage
 from scipy.interpolate import RegularGridInterpolator
 import xarray as xr
 
-from spimple.fits import data_from_header, load_fits
+from spimple.core.fits import data_from_header, load_fits
 
-
-def str2bool(v):
-    """
-    Converts a string or boolean input to a boolean value.
-
-    Accepts common string representations of true and false. Raises an
-    ArgumentTypeError if the input cannot be interpreted as a boolean.
-    """
-    if isinstance(v, bool):
-        return v
-    if v.lower() in ("yes", "true", "t", "y", "1"):
-        return True
-    if v.lower() in ("no", "false", "f", "n", "0"):
-        return False
-    raise argparse.ArgumentTypeError("Boolean value expected.")
+iFs = np.fft.ifftshift
+Fs = np.fft.fftshift
 
 
 def Gaussian2D(xin, yin, GaussPar=(1.0, 1.0, 0.0), normalise=True, nsigma=5):
@@ -102,9 +84,7 @@ def get_padding_info(nx, ny, pfrac):
     return padding, unpad_x, unpad_y
 
 
-def convolve2gaussres(
-    image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=0.5, norm_kernel=False
-):
+def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=0.5, norm_kernel=False):
     """
     Convolves the image to a specified resolution.
 
@@ -129,9 +109,7 @@ def convolve2gaussres(
 
     gausskern = Gaussian2D(xx, yy, gaussparf, normalise=norm_kernel)
     gausskern = np.pad(gausskern[None], padding, mode="constant")
-    gausskernhat = r2c(
-        iFs(gausskern, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0
-    )
+    gausskernhat = r2c(iFs(gausskern, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
 
     image = np.pad(image, padding, mode="constant").astype(np.float64)
     imhat = r2c(iFs(image, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
@@ -141,9 +119,7 @@ def convolve2gaussres(
         imhat *= gausskernhat
     else:
         for i in range(nband):
-            thiskern = Gaussian2D(xx, yy, gausspari[i], normalise=norm_kernel).astype(
-                np.float64
-            )
+            thiskern = Gaussian2D(xx, yy, gausspari[i], normalise=norm_kernel).astype(np.float64)
             thiskern = np.pad(thiskern[None], padding, mode="constant")
             thiskernhat = r2c(
                 iFs(thiskern, axes=ax),
@@ -154,9 +130,7 @@ def convolve2gaussres(
             )
 
             if not np.all(np.isnan(thiskernhat)):
-                convkernhat = np.where(
-                    np.abs(thiskernhat) > 1e-10, gausskernhat / thiskernhat, 0.0
-                )
+                convkernhat = np.where(np.abs(thiskernhat) > 1e-10, gausskernhat / thiskernhat, 0.0)
             else:
                 print("Nan values have been encountered. Subverting RuntimeWarning")
                 convkernhat = np.zeros_like(thiskernhat).astype("complex")
@@ -164,9 +138,7 @@ def convolve2gaussres(
             imhat[i] *= convkernhat[0]
 
     image = Fs(
-        c2r(
-            imhat, axes=ax, forward=False, lastsize=lastsize, inorm=2, nthreads=nthreads
-        ),
+        c2r(imhat, axes=ax, forward=False, lastsize=lastsize, inorm=2, nthreads=nthreads),
         axes=ax,
     )[:, unpad_x, unpad_y]
 
@@ -230,14 +202,10 @@ def extract_dde_info(opts, freqs):
                 field = xds_from_table(ms_name + "::FIELD")[0].compute()
                 tmp = field["PHASE_DIR"][opts.field].data.squeeze()
                 if not np.array_equal(phase_dir, tmp):
-                    raise ValueError(
-                        "Phase direction not the same across measurement sets"
-                    )
+                    raise ValueError("Phase direction not the same across measurement sets")
 
             # get unique times and count flags
-            xds = xds_from_ms(
-                ms_name, columns=["TIME", "FLAG_ROW"], group_cols=["FIELD_ID"]
-            )[opts.field]
+            xds = xds_from_ms(ms_name, columns=["TIME", "FLAG_ROW"], group_cols=["FIELD_ID"])[opts.field]
             utime, time_idx = np.unique(xds.TIME.data.compute(), return_index=True)
             ntime = utime.size
             # extract subset of times
@@ -250,9 +218,7 @@ def extract_dde_info(opts, freqs):
             utimes_list.append(utime)
 
             flags = xds.FLAG_ROW.data.compute()
-            unflag_count = _unflagged_counts(
-                flags.astype(np.int32), time_idx, np.zeros(ntime, dtype=np.int32)
-            )
+            unflag_count = _unflagged_counts(flags.astype(np.int32), time_idx, np.zeros(ntime, dtype=np.int32))
             unflag_counts_list.append(unflag_count)
 
         # Convert lists to numpy arrays
@@ -313,9 +279,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     Returns:
         Tuple containing the beam amplitude cube, spatial extents, and beam frequencies.
     """
-    paths = list(
-        Path(opts.beam_model).parent.glob(Path(opts.beam_model).name + "**_**.fits")
-    )
+    paths = list(Path(opts.beam_model).parent.glob(Path(opts.beam_model).name + "**_**.fits"))
     beam_hdr = None
     if opts.corr_type == "linear":
         corr1 = "XX"
@@ -324,9 +288,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
         corr1 = "LL"
         corr2 = "RR"
     else:
-        raise KeyError(
-            "Unknown corr_type supplied. Only 'linear' or 'circular' supported"
-        )
+        raise KeyError("Unknown corr_type supplied. Only 'linear' or 'circular' supported")
 
     for path in paths:
         path_str = str(path)
@@ -354,9 +316,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
 
     # get cube in correct shape for interpolation code
     beam_amp = beam_amp[0]  # drop corr axis
-    beam_amp = np.ascontiguousarray(
-        np.transpose(beam_amp, (1, 2, 0))[:, :, :, None, None]
-    )
+    beam_amp = np.ascontiguousarray(np.transpose(beam_amp, (1, 2, 0))[:, :, :, None, None])
     # get cube info
     if beam_hdr["CUNIT1"].lower() != "deg":
         raise ValueError("Beam image units must be in degrees")
@@ -393,10 +353,7 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     freq0 = beam_hdr["CRVAL3"]
     bfreqs = freq0 + np.arange(1 - refpix, 1 + nchan - refpix) * delta
     if bfreqs[0] > freqs[0] or bfreqs[-1] < freqs[-1]:
-        raise ValueError(
-            f"The supplied beam does not have sufficient bandwidth. min={bfreqs.min()},"
-            f"max={bfreqs.max()}"
-        )
+        raise ValueError(f"The supplied beam does not have sufficient bandwidth. min={bfreqs.min()},max={bfreqs.max()}")
 
     if use_dask:
         return (
@@ -428,9 +385,7 @@ def interpolate_beam(ll, mm, freqs, opts):
         A NumPy array of the interpolated beam, with shape (nfreq, *ll.shape).
     """
     nband = freqs.size
-    parangles, ant_scale, point_errs, unflag_counts, use_dask = extract_dde_info(
-        opts, freqs
-    )
+    parangles, ant_scale, point_errs, unflag_counts, use_dask = extract_dde_info(opts, freqs)
 
     lm_source = np.vstack((ll.ravel(), mm.ravel())).T
     beam_amp, beam_extents, bfreqs = make_power_beam(opts, lm_source, freqs, use_dask)
@@ -452,9 +407,7 @@ def interpolate_beam(ll, mm, freqs, opts):
             ilow = I[i]
             ihigh = I[i + 1]
             part_parangles = da.from_array(parangles[ilow:ihigh], chunks=(1, 1))
-            part_point_errs = da.from_array(
-                point_errs[ilow:ihigh], chunks=(1, 1, freqs.size, 2)
-            )
+            part_point_errs = da.from_array(point_errs[ilow:ihigh], chunks=(1, 1, freqs.size, 2))
             # interpolate and remove redundant axes
             part_beam_image = beam_cube_dde_dask(
                 beam_amp,
@@ -514,17 +467,11 @@ def mosaic_info(im_list, oname, ref_image=None):
         nchan = hdr["NAXIS3"]
         ncorr = hdr["NAXIS4"]
         shapes.append((hdr["NAXIS1"], hdr["NAXIS2"]))
-        out_names.extend([
-            f"{basename}_im{imnum}_pol{c}_ch{f}.zarr"
-            for c in range(ncorr)
-            for f in range(nchan)
-        ])
+        out_names.extend([f"{basename}_im{imnum}_pol{c}_ch{f}.zarr" for c in range(ncorr) for f in range(nchan)])
     nu = np.array(flatfreqs)
     ufreqs = np.unique(nu)
     # get domain of intrinsic image
-    ref_wcs, shape_out = find_optimal_celestial_wcs(
-        list(zip(shapes, wcss, strict=False)), projection="SIN"
-    )
+    ref_wcs, shape_out = find_optimal_celestial_wcs(list(zip(shapes, wcss, strict=False)), projection="SIN")
     ref_wcs.array_shape = (shape_out[0], shape_out[1])
 
     return ref_wcs, ufreqs, out_names
@@ -585,9 +532,7 @@ def project(im, imnum, ref_wcs, beam, oname, method="interp"):
             step = 25
             angles = np.linspace(0, 359, step)
             for angle in angles:
-                bdata += ndimage.rotate(
-                    beami, angle, reshape=False, order=1, mode="nearest"
-                )
+                bdata += ndimage.rotate(beami, angle, reshape=False, order=1, mode="nearest")
             bdata /= angles.size
             pbeam, footprint = reproject_interp(
                 (bdata, wcs),

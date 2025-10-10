@@ -2,12 +2,12 @@
 
 import multiprocessing
 
-import dask.array as da
-import numpy as np
-import pyscilog
 from africanus.model.spi.dask import fit_spi_components
 from astropy.io import fits
+import dask.array as da
 from katbeam import JimBeam
+import numpy as np
+import pyscilog
 
 from spimple.fits import data_from_header, load_fits, save_fits, set_header_info
 from spimple.utils import convolve2gaussres, interpolate_beam
@@ -101,10 +101,7 @@ def spifit(
             pa = rhdr["BPA"]
             gaussparf = (emaj, emin, pa)
         else:
-            raise ValueError(
-                "No beam parameters found in residual.You will have to provide "
-                "them manually."
-            )
+            raise ValueError("No beam parameters found in residual.You will have to provide them manually.")
 
     else:
         gaussparf = tuple(psf_pars)
@@ -166,11 +163,7 @@ def spifit(
     # stack model data cube
     model = np.stack(models_data)
     # Create numpy array with proper type annotation
-    freqs = (
-        np.array(channel_freqs)
-        if channel_freqs is not None
-        else np.array(freq_list)
-    )
+    freqs = np.array(channel_freqs) if channel_freqs is not None else np.array(freq_list)
     nband = freqs.size
     if nband < 2:
         raise ValueError("Can't produce alpha map from a single band image")
@@ -187,8 +180,7 @@ def spifit(
     if ref_freq_param is not None and ref_freq_param != ref_freq:
         ref_freq = ref_freq_param
         print(
-            "Provided reference frequency does not match that of fits file. "
-            "Will overwrite.",
+            "Provided reference frequency does not match that of fits file. Will overwrite.",
             file=log,
         )
 
@@ -252,6 +244,7 @@ def spifit(
             # Note: interpolate_beam expects an opts object - need to create compatible structure
             class BeamOpts:
                 pass
+
             beam_opts = BeamOpts()
             beam_opts.beam_model = beam_model
             beam_opts.ms = ms
@@ -278,9 +271,7 @@ def spifit(
     if not dont_convolve:
         print("Convolving model", file=log)
         # convolve model to desired resolution
-        model, gausskern = convolve2gaussres(
-            model, xx, yy, gaussparf, nthreads, None, padding_frac
-        )
+        model, gausskern = convolve2gaussres(model, xx, yy, gaussparf, nthreads, None, padding_frac)
 
         # save clean beam
         if "c" in products:
@@ -300,10 +291,7 @@ def spifit(
         residuals = [load_fits(res, dtype=out_dtype) for res in residual]
         resid = np.stack(residuals).squeeze()
         rhdr = [fits.getheader(res) for res in residual]
-        freqs_res = np.array([
-            data_from_header(fits.getheader(res), axis=freq_axis)[0]
-            for res in residual
-        ]).flatten()
+        freqs_res = np.array([data_from_header(fits.getheader(res), axis=freq_axis)[0] for res in residual]).flatten()
         freqs_res = freqs if channel_freqs else freqs_res
         if not np.array_equal(freqs, freqs_res):
             raise ValueError("Freqs of residual do not match those of model")
@@ -341,8 +329,7 @@ def spifit(
             print(f"Gausspars in residual header: {gausspari}", file=log)  # type: ignore[unreachable]
         else:
             print(
-                "Can't find Gausspars in residual header, "
-                "unable to add residuals back in",
+                "Can't find Gausspars in residual header, unable to add residuals back in",
                 file=log,
             )
             gausspari = None
@@ -372,15 +359,13 @@ def spifit(
         rms_cube = np.std(resid.reshape(nband, npix_l * npix_m), axis=1).ravel()
         threshold_val = threshold * rms
         print(
-            f"Setting cutoff threshold as {threshold} times "
-            "the rms of the residual ",
+            f"Setting cutoff threshold as {threshold} times the rms of the residual ",
             file=log,
         )
         del resid
     else:
         print(
-            "No residual provided. Setting  threshold i.t.o dynamic range. "
-            f"Max dynamic range is {maxDR}",
+            f"No residual provided. Setting  threshold i.t.o dynamic range. Max dynamic range is {maxDR}",
             file=log,
         )
         mask = ~np.isnan(model)
@@ -430,8 +415,7 @@ def spifit(
             print("Using provided channel weights.", file=log)
         except Exception as e:
             print(
-                "Number of provided channel weights not equal "
-                "to number of imaging bands",
+                "Number of provided channel weights not equal to number of imaging bands",
                 file=log,
             )
     else:
@@ -480,9 +464,7 @@ def spifit(
     alpha_err_map[maskindices[:, 0], maskindices[:, 1]] = alpha_err
     i0map[maskindices[:, 0], maskindices[:, 1]] = Iref
     i0_err_map[maskindices[:, 0], maskindices[:, 1]] = i0_err
-    Irec_cube = (
-        i0map[None, :, :] * (freqs[:, None, None] / ref_freq) ** alphamap[None, :, :]
-    )
+    Irec_cube = i0map[None, :, :] * (freqs[:, None, None] / ref_freq) ** alphamap[None, :, :]
     fit_diff = np.zeros_like(model)
     fit_diff[...] = np.nan
     ix = maskindices[:, 0]

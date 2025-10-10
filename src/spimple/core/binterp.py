@@ -2,9 +2,9 @@
 
 import multiprocessing
 
+from astropy.io import fits
 import numpy as np
 import pyscilog
-from astropy.io import fits
 
 from spimple.fits import data_from_header, save_fits, set_header_info
 from spimple.utils import interpolate_beam
@@ -68,6 +68,7 @@ def binterp(
     # Note: interpolate_beam expects an opts object - need to create compatible structure
     class BeamOpts:
         pass
+
     beam_opts = BeamOpts()
     beam_opts.beam_model = beam_model
     beam_opts.ms = ms
