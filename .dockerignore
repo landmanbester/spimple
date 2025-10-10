@@ -1,0 +1,65 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Python cache
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual environments
+venv/
+env/
+ENV/
+.venv
+
+# uv cache
+.uv/
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# CI/CD
+.github/
+
+# Documentation
+docs/
+*.md
+!README.md
+
+# Development tools
+.pre-commit-config.yaml
+.ruff_cache/
+.mypy_cache/
+
+# Old cabs directory (now in src/spimple/cabs/)
+cabs/
+
+# Data files
+*.fits
+*.ms
+
+# Logs
+*.log
+
+# Scripts (not needed in container)
+scripts/

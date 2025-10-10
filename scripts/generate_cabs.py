@@ -6,7 +6,8 @@ import subprocess
 
 CLI_MODULES = ["spimple.cli.imconv", "spimple.cli.spifit", "spimple.cli.binterp", "spimple.cli.mosaic"]
 
-CABS_DIR = Path("cabs")
+# Cab definitions are stored in the package to be included in distribution
+CABS_DIR = Path("src/spimple/cabs")
 CABS_DIR.mkdir(exist_ok=True)
 
 for module in CLI_MODULES:
