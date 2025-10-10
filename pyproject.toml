@@ -13,7 +13,19 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
 ]
+
+[project.urls]
+Homepage = "https://github.com/landmanbester/spimple"
+
+packages = [{include = "spimple", from = "src"}]
 dependencies = [
+    "typer>=0.12.0",
+    "hip-cargo @ git+https://github.com/landmanbester/hip-cargo.git@demotools",
+]
+
+[project.optional-dependencies]
+# Full scientific stack
+full = [
     "omegaconf",
     "katbeam",
     "pyscilog>=0.1.2",
@@ -22,9 +34,6 @@ dependencies = [
     "reproject",
     "ray[default]",
 ]
-
-[project.urls]
-Homepage = "https://github.com/landmanbester/spimple"
 
 [project.optional-dependencies]
 dev = [
@@ -36,14 +45,11 @@ dev = [
 ]
 
 [project.scripts]
-spimple-imconv = "spimple.apps.image_convolver:image_convolver"
-spimple-spifit = "spimple.apps.spi_fitter:spi_fitter"
-spimple-binterp = "spimple.apps.power_beam_maker:power_beam_maker"
-spimple-mosaic = "spimple.apps.mosaic:mosaic"
+spimple = "spimple.cli:app"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.3,<0.9.0"]
+build-backend = "uv_build"
 
 [tool.tbump]
 github_url = "https://github.com/landmanbester/spimple"
@@ -93,7 +99,7 @@ search = "__version__='{current_version}'"
 
 [tool.ruff]
 # Set the maximum line length to 88.
-line-length = 88
+line-length = 120
 indent-width = 4
 
 # Assume Python 3.10+.
