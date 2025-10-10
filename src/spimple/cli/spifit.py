@@ -1,9 +1,19 @@
 import typer
 from typing_extensions import Annotated, Literal
 from pathlib import Path
+from hip_cargo import stimela_cab, stimela_output
 from hip_cargo.callbacks import expand_patterns
 
-
+@stimela_cab(
+    name="spifit",
+    info="Fit spectral index map.",
+    policies={'pass_missing_as_none': True},
+)
+@stimela_output(
+    name="output_filename",
+    dtype="File",
+    info="{current.output_filename}.fits"
+)
 def spifit(
     image: Annotated[list[str],
                     typer.Option(...,
@@ -79,7 +89,50 @@ def spifit(
                               typer.Option(help="Optional bands to select. "
                                                 "Has to be passed in as a comma separated string")] = None,
 ):
-    print(image)
-    print(output_filename)
-    print(psf_pars)
-    pass
+    """
+    Fit spectral index models to image cubes with optional convolution and primary beam correction.
+    """
+    # Lazy import the core implementation
+    from spimple.core.spifit import spifit as spifit_core
+
+    # Parse channel_freqs if provided as comma-separated string
+    channel_freqs_list = None
+    if channel_freqs is not None:
+        channel_freqs_list = [float(x.strip()) for x in channel_freqs.split(',')]
+
+    # Parse deselect_bands if provided as comma-separated string
+    deselect_bands_list = None
+    if deselect_bands is not None:
+        deselect_bands_list = [int(x.strip()) for x in deselect_bands.split(',')]
+
+    # Convert Path types to strings for core function
+    ms_str = str(ms) if ms is not None else None
+    beam_model_str = str(beam_model) if beam_model is not None else None
+    output_filename_str = str(output_filename)
+
+    # Call the core function with all parameters
+    spifit_core(
+        image=image,
+        output_filename=output_filename_str,
+        residual=residual,
+        psf_pars=psf_pars,
+        circ_psf=circ_psf,
+        threshold=threshold,
+        maxDR=maxDR,
+        nthreads=nthreads,
+        pfb_min=pfb_min,
+        products=products,
+        padding_frac=padding_frac,
+        dont_convolve=dont_convolve,
+        channel_weights_keyword=channel_weights_keyword,
+        channel_freqs=channel_freqs_list,
+        ref_freq=ref_freq,
+        out_dtype=out_dtype,
+        add_convolved_residuals=add_convolved_residuals,
+        ms=[ms_str] if ms_str is not None else None,
+        beam_model=beam_model_str,
+        sparsify_time=sparsify_time,
+        corr_type=corr_type,
+        band=band,
+        deselect_bands=deselect_bands_list,
+    )

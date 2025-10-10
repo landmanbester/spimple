@@ -1,145 +1,43 @@
 #!/usr/bin/env python
 
+import multiprocessing
+import time
+from pathlib import Path
+
+import numpy as np
 import pyscilog
+import ray
+from astropy.io import fits
+
+from spimple.fits import set_wcs
+from spimple.utils import mosaic_info, project, stitch_images
 
 pyscilog.init("spimple")
 log = pyscilog.get_logger("MOSAIC")
-import argparse
-import multiprocessing
-from pathlib import Path
-import time
-
-from astropy.io import fits
-import numpy as np
-from omegaconf import OmegaConf
-import ray
-
-from spimple.fits import set_wcs
-from spimple.utils import mosaic_info, project, stitch_images, str2bool
 
 
-def mosaic():
+def mosaic(
+    images: list[str],
+    output_filename: str,
+    beam_model: str | None = None,
+    band: str = "L",
+    ref_image: str | None = None,
+    padding: float = 0.1,
+    method: str = "interp",
+    nthreads: int = 1,
+    nworkers: int = 1,
+    out_dtype: str = "f4",
+    convolve: bool = False,
+    redo_project: bool = False,
+    debug: bool = False,
+):
     """
     Mosaic multiple FITS images together onto a common coordinate grid.
 
-    This command-line tool takes multiple FITS images and combines them into
-    a single mosaic image using interpolation to handle different coordinate
-    systems and spatial coverage.
+    This function takes multiple FITS images and combines them into a single
+    mosaic image using interpolation to handle different coordinate systems
+    and spatial coverage.
     """
-    parser = argparse.ArgumentParser(
-        description="Mosaic multiple FITS images together.",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser.add_argument(
-        "-images",
-        "--images",
-        nargs="+",
-        type=str,
-        required=True,
-        help="List of FITS images to mosaic together",
-    )
-    parser.add_argument(
-        "-o",
-        "--output-filename",
-        type=str,
-        required=True,
-        help="Path to output mosaic FITS file",
-    )
-    parser.add_argument(
-        "-bm",
-        "--beam-model",
-        default=None,
-        type=str,
-        help="Fits beam model to use. \n"
-        "Use power_beam_maker to make power beam "
-        "corresponding to image. ",
-    )
-    parser.add_argument(
-        "-band",
-        "--band",
-        type=str,
-        default="l",
-        help="Band to use with JimBeam. L, UHF or S",
-    )
-    parser.add_argument(
-        "-ref-image",
-        "--ref-image",
-        type=str,
-        default=None,
-        help="Reference image to define the output coordinate system. \n"
-        "If not provided, an optimal reference will be attempted.",
-    )
-    parser.add_argument(
-        "-padding",
-        "--padding",
-        type=float,
-        default=0.1,
-        help="Padding factor for FFTs. \nDefault is 0.1 (10%% padding).",
-    )
-    parser.add_argument(
-        "-method",
-        "--method",
-        type=str,
-        default="interp",
-        choices=["interp", "adaptive", "exact"],
-        help="Reprojection method, see reproject for details. \n"
-        "Options: interp, adaptive, exact",
-    )
-    parser.add_argument(
-        "-nthreads",
-        "--nthreads",
-        default=1,
-        type=int,
-        help="Number of threads to use per worker.",
-    )
-    parser.add_argument(
-        "-nworkers",
-        "--nworkers",
-        default=1,
-        type=int,
-        help="Number of workers to use for parallel processing.",
-    )
-    parser.add_argument(
-        "-otype",
-        "--out_dtype",
-        default="f4",
-        type=str,
-        help="Data type of output. Default is single precision",
-    )
-    parser.add_argument(
-        "-convolve",
-        "--convolve",
-        type=str2bool,
-        nargs="?",
-        const=True,
-        default=False,
-        help="Flag to convolve images to common resolution before projection. \n"
-        "If no psf-pars are passed in the lowest resolution will be determined "
-        "automatically. ",
-    )
-    parser.add_argument(
-        "-redo",
-        "--redo-project",
-        type=str2bool,
-        nargs="?",
-        const=True,
-        default=False,
-        help="Force re-projection even if output exists. ",
-    )
-    parser.add_argument(
-        "-debug",
-        "--debug",
-        type=str2bool,
-        nargs="?",
-        const=True,
-        default=False,
-        help="Run everyting in local mode to assist with debugging.",
-    )
-
-    opts = parser.parse_args()
-    opts = OmegaConf.create(vars(opts))
-    OmegaConf.set_struct(opts, True)
-
     # logging
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     logname = f"mosaic_{timestamp}.log"
@@ -147,38 +45,49 @@ def mosaic():
     print(f"Logs will be written to {logname}", file=log)
 
     # ray init
-    if not opts.nthreads:
-        opts.nthreads = multiprocessing.cpu_count() // 2
+    if not nthreads:
+        nthreads = multiprocessing.cpu_count() // 2
 
     ray.init(
-        num_cpus=opts.nworkers,
+        num_cpus=nworkers,
         logging_level="INFO",
         ignore_reinit_error=True,
-        local_mode=opts.debug,
+        local_mode=debug,
     )
 
     print("Input Options:", file=log)
-    for key, val in opts.items():
-        print(f"     {key:>25} = {val}", file=log)
+    print(f"     {'images':>25} = {images}", file=log)
+    print(f"     {'output_filename':>25} = {output_filename}", file=log)
+    print(f"     {'beam_model':>25} = {beam_model}", file=log)
+    print(f"     {'band':>25} = {band}", file=log)
+    print(f"     {'ref_image':>25} = {ref_image}", file=log)
+    print(f"     {'padding':>25} = {padding}", file=log)
+    print(f"     {'method':>25} = {method}", file=log)
+    print(f"     {'nthreads':>25} = {nthreads}", file=log)
+    print(f"     {'nworkers':>25} = {nworkers}", file=log)
+    print(f"     {'out_dtype':>25} = {out_dtype}", file=log)
+    print(f"     {'convolve':>25} = {convolve}", file=log)
+    print(f"     {'redo_project':>25} = {redo_project}", file=log)
+    print(f"     {'debug':>25} = {debug}", file=log)
 
-    path = Path(opts.output_filename)
+    path = Path(output_filename)
     if not path.parent.exists():
         print(f"Creating output directory: {path.parent}", file=log)
         path.parent.mkdir(parents=True, exist_ok=True)
 
     # project images
     print("Generating reference header", file=log)
-    if isinstance(opts.images, str):
-        image_list = sorted(Path().glob(opts.images))
+    if isinstance(images, str):
+        image_list = sorted(Path().glob(images))
     else:
         image_list = []
-        for images in opts.images:
-            imgs = sorted(Path().glob(images))
+        for img in images:
+            imgs = sorted(Path().glob(img))
             if not imgs:
-                raise RuntimeError(f"Nothing found at {images}")
+                raise RuntimeError(f"Nothing found at {img}")
             image_list.extend(imgs)
 
-    ref_wcs, ufreqs, out_names = mosaic_info(image_list, opts.output_filename)
+    ref_wcs, ufreqs, out_names = mosaic_info(image_list, output_filename)
 
     nyo, nxo = ref_wcs.array_shape
     nchano = ufreqs.size
@@ -186,7 +95,7 @@ def mosaic():
 
     # check if projection has been done
     do_project = False
-    if not opts.redo_project:
+    if not redo_project:
         for name in out_names:
             if not Path(name).is_dir():
                 do_project = True
@@ -199,7 +108,7 @@ def mosaic():
         tasks = []
         for imnum, im in enumerate(image_list):
             fut = project.remote(
-                im, imnum, ref_wcs, opts.beam_model, opts.output_filename
+                im, imnum, ref_wcs, beam_model, output_filename
             )
             tasks.append(fut)
 
@@ -263,11 +172,11 @@ def mosaic():
 
     hdu = fits.PrimaryHDU(header=out_hdr)
     hdu.data = outim
-    hdu.writeto(opts.output_filename, overwrite=True)
-    print(f"Saved mosaic to {opts.output_filename}", file=log)
+    hdu.writeto(output_filename, overwrite=True)
+    print(f"Saved mosaic to {output_filename}", file=log)
 
     # Save weight map
-    weight_filename = opts.output_filename.replace(".fits", "_weights.fits")
+    weight_filename = output_filename.replace(".fits", "_weights.fits")
     hdu.data = outwgt
     hdu.writeto(weight_filename, overwrite=True)
     print(f"Saved weight map to {weight_filename}", file=log)

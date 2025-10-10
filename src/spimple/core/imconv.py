@@ -1,131 +1,56 @@
 #!/usr/bin/env python
 
+import multiprocessing
+from pathlib import Path
+
+import numpy as np
 import pyscilog
+from astropy.io import fits
+from katbeam import JimBeam
+
+from spimple.core.fits import data_from_header, load_fits, save_fits
+from spimple.core.utils import convolve2gaussres
 
 pyscilog.init("spimple")
 log = pyscilog.get_logger("IMCONV")
-import argparse
-import multiprocessing
-
-from astropy.io import fits
-from katbeam import JimBeam
-import numpy as np
-from omegaconf import OmegaConf
-
-from spimple.fits import data_from_header, load_fits, save_fits
-from spimple.utils import convolve2gaussres
 
 
-def image_convolver():
-    parser = argparse.ArgumentParser(
-        description="Convolve images to a common resolution.",
-        formatter_class=argparse.RawTextHelpFormatter,
-    )
-    parser.add_argument("-image", "--image", type=str, required=True)
-    parser.add_argument(
-        "-o",
-        "--output-filename",
-        type=str,
-        required=True,
-        help="Path to output directory.",
-    )
-    parser.add_argument(
-        "-products",
-        "--products",
-        default="i",
-        type=str,
-        help="Outputs to write. Letter correspond to: \n"
-        "c - restoring beam used for convolution \n"
-        "i - convolved image \n"
-        "b - average power beam \n"
-        "w - beam**2 weight image to use for Mosaicing \n"
-        "Default is to write only the convolved image",
-    )
-    parser.add_argument(
-        "-pp",
-        "--psf-pars",
-        default=None,
-        nargs="+",
-        type=float,
-        help="Beam parameters matching FWHM of restoring beam "
-        "specified as emaj emin pa. \n"
-        "By default these are taken from the fits header "
-        "of the image.",
-    )
-    parser.add_argument(
-        "-nthreads",
-        "--nthreads",
-        default=0,
-        type=int,
-        help="Number of threads to use. \nDefault of zero means use all threads",
-    )
-    parser.add_argument(
-        "-cp",
-        "--circ-psf",
-        action="store_true",
-        help="Passing this flag will convolve with a circularised beam instead of an "
-        "elliptical one",
-    )
-    parser.add_argument(
-        "-dilate",
-        "--dilate",
-        default=1.05,
-        type=float,
-        help="Dilate the psf-pars in fits header by this amount."
-        "This is sometimes required for stability.",
-    )
-    parser.add_argument(
-        "-bm",
-        "--beam-model",
-        default=None,
-        type=str,
-        help="Fits beam model to use. \n"
-        "Use power_beam_maker to make power beam "
-        "corresponding to image. ",
-    )
-    parser.add_argument(
-        "-band",
-        "--band",
-        type=str,
-        default="l",
-        help="Band to use with JimBeam. L, UHF or S",
-    )
-    parser.add_argument(
-        "-pb-min",
-        "--pb-min",
-        type=float,
-        default=0.05,
-        help="Set image to zero where pb falls below this value",
-    )
-    parser.add_argument(
-        "-pf",
-        "--padding-frac",
-        type=float,
-        default=0.5,
-        help="Padding fraction for FFTs (half on either side)",
-    )
-    parser.add_argument(
-        "-otype",
-        "--out_dtype",
-        default="f4",
-        type=str,
-        help="Data type of output. Default is single precision",
-    )
-    opts = parser.parse_args()
-    opts = OmegaConf.create(vars(opts))
+def imconv(
+    image: list[str],
+    output_filename: Path,
+    products: str = "i",
+    psf_pars: tuple[float, float, float] | None = None,
+    nthreads: int | None = None,
+    circ_psf: bool = False,
+    dilate: float = 1.05,
+    beam_model: Path | None = None,
+    band: str = "L",
+    pb_min: float = 0.05,
+    padding_frac: float = 0.5,
+    out_dtype: str = "f4",
+):
+
     pyscilog.log_to_file("image_convolver.log")
 
-    if not opts.nthreads:
-        opts.nthreads = multiprocessing.cpu_count()
-
-    OmegaConf.set_struct(opts, True)
+    if not nthreads:
+        nthreads = multiprocessing.cpu_count()
 
     print("Input Options:", file=log)
-    for key, val in opts.items():
-        print(f"     {key:>25} = {val}", file=log)
+    print(f"     {'image':>25} = {image}", file=log)
+    print(f"     {'output_filename':>25} = {output_filename}", file=log)
+    print(f"     {'products':>25} = {products}", file=log)
+    print(f"     {'psf_pars':>25} = {psf_pars}", file=log)
+    print(f"     {'nthreads':>25} = {nthreads}", file=log)
+    print(f"     {'circ_psf':>25} = {circ_psf}", file=log)
+    print(f"     {'dilate':>25} = {dilate}", file=log)
+    print(f"     {'beam_model':>25} = {beam_model}", file=log)
+    print(f"     {'band':>25} = {band}", file=log)
+    print(f"     {'pb_min':>25} = {pb_min}", file=log)
+    print(f"     {'padding_frac':>25} = {padding_frac}", file=log)
+    print(f"     {'out_dtype':>25} = {out_dtype}", file=log)
 
     # read coords from fits file
-    hdr = fits.getheader(opts.image)
+    hdr = fits.getheader(image[0])
     l_coord, ref_l = data_from_header(hdr, axis=1)
     l_coord -= ref_l
     m_coord, ref_m = data_from_header(hdr, axis=2)
@@ -162,7 +87,7 @@ def image_convolver():
         # using key of 1 for consistency with fits standard
         gausspari = ((emaj, emin, pa),)
 
-    if len(gausspari) == 0 and opts.psf_pars is None:
+    if len(gausspari) == 0 and psf_pars is None:
         print("No psf parameters in fits file and none passed in.", file=log)
         raise ValueError("No psf parameters in fits file and none passed in.")
 
@@ -172,23 +97,23 @@ def image_convolver():
             "Convolving model to resolution specified by psf-pars.",
             file=log,
         )
-        gaussparf = tuple(opts.psf_pars)
-    elif opts.psf_pars is None:  # type: ignore[unreachable]
+        gaussparf = tuple(psf_pars)
+    elif psf_pars is None:  # type: ignore[unreachable]
         gfi = gausspari[0]
         gaussparf = list(gfi)
         # take the largest ones
         for gp in gausspari:
-            gaussparf[0] = np.maximum(gaussparf[0], gp[0] * opts.dilate)
-            gaussparf[1] = np.maximum(gaussparf[1], gp[1] * opts.dilate)
+            gaussparf[0] = np.maximum(gaussparf[0], gp[0] * dilate)
+            gaussparf[1] = np.maximum(gaussparf[1], gp[1] * dilate)
         gaussparf = tuple(gaussparf)
-        if gaussparf[0] > gfi[0] * opts.dilate or gaussparf[1] > gfi[1] * opts.dilate:
+        if gaussparf[0] > gfi[0] * dilate or gaussparf[1] > gfi[1] * dilate:
             print(
                 "Warning - largest clean beam does not correspond to "
                 "band 0. You may want to consider removing such bands.",
                 file=log,
             )
     else:
-        gaussparf = tuple(opts.psf_pars)
+        gaussparf = tuple(psf_pars)
         for gp in gausspari:
             if gp[0] > gaussparf[0]:
                 raise ValueError(
@@ -199,7 +124,7 @@ def image_convolver():
                     "Target resolution cannot be smaller than original. Axis 1"
                 )
 
-    if opts.circ_psf:
+    if circ_psf:
         e = np.maximum(gaussparf[0], gaussparf[1])
         gaussparf_list = list(gaussparf)
         gaussparf_list[0] = 1.05 * e
@@ -227,21 +152,21 @@ def image_convolver():
     xx, yy = np.meshgrid(l_coord, m_coord, indexing="ij")
 
     # convolve image
-    imagei = load_fits(opts.image, dtype=np.float32).squeeze()
+    imagei = load_fits(image[0], dtype=np.float32).squeeze()
     if imagei.ndim == 2:
         imagei = imagei[None, :, :]
     if imagei.ndim != 3:
         raise ValueError("Unsupported number of image dimensions")
     print("Convolving image", file=log)
 
-    image, gausskern = convolve2gaussres(
-        imagei, xx, yy, gaussparf, opts.nthreads, gausspari, opts.padding_frac
+    image_out, gausskern = convolve2gaussres(
+        imagei, xx, yy, gaussparf, nthreads, gausspari, padding_frac
     )
 
     # load beam and correct
-    if opts.beam_model is not None:
-        if opts.beam_model.endswith(".fits"):
-            bhdr = fits.getheader(opts.beam_model)
+    if beam_model is not None:
+        if str(beam_model).endswith(".fits"):
+            bhdr = fits.getheader(beam_model)
             l_coord_beam, ref_lb = data_from_header(bhdr, axis=1)
             l_coord_beam -= ref_lb
             if not np.array_equal(l_coord_beam, l_coord):
@@ -265,51 +190,51 @@ def image_convolver():
                     "Use power_beam_maker to interpolate to fits header."
                 )
 
-            beam_image = load_fits(opts.beam_model, dtype=np.float32).squeeze()
-        elif opts.beam_model == "JimBeam":
-            if opts.band.lower() == "l":
+            beam_image = load_fits(beam_model, dtype=np.float32).squeeze()
+        elif str(beam_model) == "JimBeam":
+            if band.lower() == "l":
                 beam = JimBeam("MKAT-AA-L-JIM-2020")
-            elif opts.band.lower() == "uhf":
+            elif band.lower() == "uhf":
                 beam = JimBeam("MKAT-AA-UHF-JIM-2020")
-            elif opts.band.lower() == "s":
+            elif band.lower() == "s":
                 beam = JimBeam("MKAT-AA-S-JIM-2020")
             else:
-                raise ValueError(f"Unknown beam model for katbeam in band {opts.band}")
+                raise ValueError(f"Unknown beam model for katbeam in band {band}")
 
-            beam_image = np.zeros(image.shape, dtype=opts.out_dtype)
+            beam_image = np.zeros(image_out.shape, dtype=out_dtype)
             for v in range(freqs.size):
                 beam_image[v] = beam.I(xx, yy, freqs[v] / 1e6)  # freqs in MHz
         else:
-            raise ValueError(f"Unknown beam model {opts.beam_model}")
+            raise ValueError(f"Unknown beam model {beam_model}")
 
-        image = np.where(beam_image >= opts.pb_min, image / beam_image, 0.0)
+        image_out = np.where(beam_image >= pb_min, image_out / beam_image, 0.0)
 
-    outfile = opts.output_filename
+    outfile = str(output_filename)
 
     # save images
     # save clean beam
-    if "c" in opts.products:
+    if "c" in products:
         name = outfile + ".clean_psf.fits"
-        save_fits(name, gausskern, hdr, dtype=opts.out_dtype)
+        save_fits(name, gausskern, hdr, dtype=out_dtype)
         print(f"Wrote clean psf to {name}", file=log)
 
-    if "i" in opts.products:
+    if "i" in products:
         name = outfile + ".convolved.fits"
-        save_fits(name, image, hdr, dtype=opts.out_dtype)
+        save_fits(name, image_out, hdr, dtype=out_dtype)
         print(f"Wrote convolved image to {name}", file=log)
 
-    if "b" in opts.products:
+    if "b" in products:
         if "beam_image" not in locals():
             raise ValueError("Cannot write power beam: no beam model provided")
         name = outfile + ".power_beam.fits"
-        save_fits(name, beam_image, hdr, dtype=opts.out_dtype)
+        save_fits(name, beam_image, hdr, dtype=out_dtype)
         print(f"Wrote average power beam to {name}", file=log)
 
-    if "w" in opts.products:
+    if "w" in products:
         if "beam_image" not in locals():
             raise ValueError("Cannot write spatial weight: no beam model provided")
         name = outfile + ".spatial_weight.fits"
-        save_fits(name, beam_image**2, hdr, dtype=opts.out_dtype)
+        save_fits(name, beam_image**2, hdr, dtype=out_dtype)
         print(f"Wrote spatial weight to {name}", file=log)
 
     print("All done here", file=log)

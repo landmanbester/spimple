@@ -4,10 +4,10 @@ import subprocess
 from pathlib import Path
 
 CLI_MODULES = [
-    "pfb.cli.grid",
-    "pfb.cli.clean", 
-    "pfb.cli.restore",
-    # ... add all CLI modules
+    "spimple.cli.imconv",
+    "spimple.cli.spifit", 
+    "spimple.cli.binterp",
+    "spimple.cli.mosaic"
 ]
 
 CABS_DIR = Path("cabs")

@@ -1,8 +1,18 @@
 import typer
 from typing_extensions import Annotated
 from pathlib import Path
+from hip_cargo import stimela_cab, stimela_output
 
-
+@stimela_cab(
+    name="imconv",
+    info="Homogenise resolution with Gaussian convolution",
+    policies={'pass_missing_as_none': True},
+)
+@stimela_output(
+    name="output_filename",
+    dtype="File",
+    info="{current.output_filename}.fits"
+)
 def imconv(
     image: Annotated[list[str],
                      typer.Option(...,
@@ -46,7 +56,21 @@ def imconv(
     """
     Convolve images to a common resolution with optional primary beam correction.
     """
-    print(image)
-    print(output_filename)
-    print(psf_pars)
-    pass
+    # Lazy import the core implementation
+    from spimple.core.imconv import imconv as imconv_core
+
+    # Call the core function with all parameters
+    imconv_core(
+        image=image,
+        output_filename=output_filename,
+        products=products,
+        psf_pars=psf_pars,
+        nthreads=nthreads,
+        circ_psf=circ_psf,
+        dilate=dilate,
+        beam_model=beam_model,
+        band=band,
+        pb_min=pb_min,
+        padding_frac=padding_frac,
+        out_dtype=out_dtype,
+    )
