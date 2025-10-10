@@ -1,0 +1,47 @@
+cabs:
+  binterp:
+    flavour: python
+    command: (spimple.cli.binterp)binterp
+    info: Interpolate a primary beam model onto the coordinate grid of a FITS image.
+    policies:
+      pass_missing_as_none: true
+    inputs:
+      image:
+        dtype: List[str]
+        info: ''
+        required: true
+        policies:
+          repeat: list
+      output_filename:
+        dtype: File
+        info: ''
+        required: true
+      ms:
+        dtype: str
+        info: ''
+        required: false
+      field:
+        dtype: int
+        info: ''
+        required: true
+      beam_model:
+        dtype: str
+        info: ''
+        required: false
+      sparsify_time:
+        dtype: int
+        info: ''
+        required: true
+      nthreads:
+        dtype: str
+        info: ''
+        required: false
+      corr_type:
+        dtype: str
+        info: ''
+        required: true
+    outputs:
+      output_filename:
+        dtype: File
+        info: '{current.output_filename}.fits'
+        required: false
