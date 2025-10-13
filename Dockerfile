@@ -9,6 +9,11 @@ ENV PYTHONUNBUFFERED=1 \
     UV_COMPILE_BYTECODE=1 \
     UV_LINK_MODE=copy
 
+# Install system dependencies (git needed for hip-cargo dependency)
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends git && \
+    rm -rf /var/lib/apt/lists/*
+
 # Install uv
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -23,7 +28,7 @@ COPY src ./src
 
 # Install the package with full dependencies
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv pip install --system --extra full -e .
+    uv pip install --system -e ".[full]"
 
 # Create non-root user for running the application
 RUN useradd -m -u 1000 spimple && \

@@ -3,6 +3,9 @@ cabs:
     flavour: python
     command: (spimple.cli.spifit)spifit
     info: Fit spectral index map.
+    image: # tell to stimela where to get cab for this version of package
+      name: 
+      version:
     policies:
       pass_missing_as_none: true
     inputs:

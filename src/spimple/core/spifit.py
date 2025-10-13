@@ -9,8 +9,8 @@ from katbeam import JimBeam
 import numpy as np
 import pyscilog
 
-from spimple.fits import data_from_header, load_fits, save_fits, set_header_info
-from spimple.utils import convolve2gaussres, interpolate_beam
+from spimple.core.fits import data_from_header, load_fits, save_fits, set_header_info
+from spimple.core.utils import convolve2gaussres, interpolate_beam
 
 pyscilog.init("spimple")
 log = pyscilog.get_logger("SPIFIT")
