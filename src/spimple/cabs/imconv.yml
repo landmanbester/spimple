@@ -1,0 +1,64 @@
+cabs:
+  imconv:
+    flavour: python
+    command: (spimple.cli.imconv)imconv
+    info: Convolve images to a common resolution with optional primary beam correction.
+    policies:
+      pass_missing_as_none: true
+    inputs:
+      image:
+        dtype: List[str]
+        info: ''
+        required: true
+        policies:
+          repeat: list
+      output_filename:
+        dtype: File
+        info: ''
+        required: true
+      products:
+        dtype: str
+        info: ''
+        required: true
+      psf_pars:
+        dtype: str
+        info: ''
+        required: false
+      nthreads:
+        dtype: str
+        info: ''
+        required: false
+      circ_psf:
+        dtype: bool
+        info: ''
+        required: false
+        default: --circ-psf
+      dilate:
+        dtype: float
+        info: ''
+        required: true
+      beam_model:
+        dtype: str
+        info: ''
+        required: false
+      band:
+        dtype: str
+        info: ''
+        required: true
+      pb_min:
+        dtype: float
+        info: ''
+        required: true
+      padding_frac:
+        dtype: float
+        info: ''
+        required: true
+      out_dtype:
+        dtype: str
+        info: ''
+        required: true
+    outputs:
+      output_filename:
+        dtype: File
+        info: '{current.output_filename}.fits'
+        required: false

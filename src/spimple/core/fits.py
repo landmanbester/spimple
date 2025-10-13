@@ -101,9 +101,7 @@ def set_wcs(
         if ms_time is not None:
             # TODO - probably a round about way of doing this
             unix_time = quantity(f"{ms_time}s").to_unix_time()
-            utc_iso = datetime.fromtimestamp(unix_time, tz=timezone.utc).strftime(
-                "%Y-%m-%d %H:%M:%S"
-            )
+            utc_iso = datetime.fromtimestamp(unix_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
             header["UTC_TIME"] = utc_iso
             t = Time(utc_iso)
             t.format = "fits"

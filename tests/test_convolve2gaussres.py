@@ -3,7 +3,7 @@ import numpy as np
 from numpy.testing._private.utils import assert_allclose
 import pytest
 
-from spimple.utils import Gaussian2D, convolve2gaussres
+from spimple.core.utils import Gaussian2D, convolve2gaussres
 
 pmp = pytest.mark.parametrize
 
@@ -26,14 +26,9 @@ def test_convolve2gaussres(nx, ny, nband, alpha):
     xx, yy = np.meshgrid(x, y, indexing="ij")
     restored = np.zeros((nband, nx, ny))
     for v in range(nband):
-        restored[v] = (
-            Gaussian2D(xx, yy, Gausspari[v], normalise=False)
-            * (freq[v] / ref_freq) ** alpha
-        )
+        restored[v] = Gaussian2D(xx, yy, Gausspari[v], normalise=False) * (freq[v] / ref_freq) ** alpha
 
-    conv_model, gausskern = convolve2gaussres(
-        restored, xx, yy, Gausspari[0], 8, gausspari=Gausspari
-    )
+    conv_model, gausskern = convolve2gaussres(restored, xx, yy, Gausspari[0], 8, gausspari=Gausspari)
 
     Ix, Iy = np.where(conv_model[-1] > 0.05)
 

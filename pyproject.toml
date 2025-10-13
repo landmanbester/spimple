@@ -14,6 +14,16 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
+    "typer>=0.12.0",
+    "hip-cargo @ git+https://github.com/landmanbester/hip-cargo.git",
+]
+
+[project.urls]
+Homepage = "https://github.com/landmanbester/spimple"
+
+[project.optional-dependencies]
+# Full scientific stack
+full = [
     "omegaconf",
     "katbeam",
     "pyscilog>=0.1.2",
@@ -23,10 +33,6 @@ dependencies = [
     "ray[default]",
 ]
 
-[project.urls]
-Homepage = "https://github.com/landmanbester/spimple"
-
-[project.optional-dependencies]
 dev = [
     "pytest>=8.0.0",
     "tbump>=6.11.0",
@@ -36,14 +42,11 @@ dev = [
 ]
 
 [project.scripts]
-spimple-imconv = "spimple.apps.image_convolver:image_convolver"
-spimple-spifit = "spimple.apps.spi_fitter:spi_fitter"
-spimple-binterp = "spimple.apps.power_beam_maker:power_beam_maker"
-spimple-mosaic = "spimple.apps.mosaic:mosaic"
+spimple = "spimple.cli:app"
 
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["uv_build>=0.8.3,<0.9.0"]
+build-backend = "uv_build"
 
 [tool.tbump]
 github_url = "https://github.com/landmanbester/spimple"
@@ -74,8 +77,8 @@ src = "pyproject.toml"
 search = 'version = "{current_version}"'
 
 [[tool.tbump.file]]
-src = "spimple/__init__.py"
-search = "__version__='{current_version}'"
+src = "src/spimple/__init__.py"
+search = '__version__ = "{current_version}"'
 
 # You can specify a list of commands to
 # run after the files have been patched
@@ -85,15 +88,15 @@ search = "__version__='{current_version}'"
 #  name = "check changelog"
 #  cmd = "grep -q {new_version} Changelog.rst"
 
-# Or run some commands after the git tag and the branch
-# have been pushed:
-#  [[tool.tbump.after_push]]
-#  name = "publish"
-#  cmd = "./publish.sh"
+# Run commands after the git tag and branch have been pushed
+# This creates a GitHub release which triggers the container build workflow
+[[tool.tbump.after_push]]
+name = "create github release"
+cmd = "gh release create v{new_version} --generate-notes"
 
 [tool.ruff]
 # Set the maximum line length to 88.
-line-length = 88
+line-length = 120
 indent-width = 4
 
 # Assume Python 3.10+.
@@ -213,13 +216,16 @@ ignore = [
     "E402",    # Module level import not at top of file
 
     # Type checking imports
-    "TCH001",  # Move application import into TYPE_CHECKING block
-    "TCH002",  # Move third-party import into TYPE_CHECKING block
-    "TCH003",  # Move standard library import into TYPE_CHECKING block
+    "TC001",  # Move application import into TYPE_CHECKING block
+    "TC002",  # Move third-party import into TYPE_CHECKING block
+    "TC003",  # Move standard library import into TYPE_CHECKING block
 
     "TRY003",   # Avoid specifying long messages outside the exception classifiers
     "EM101",    # Exception must not be a string literal, assign to variable first
     "EM102",    # Exception must not use an f-string literal, assign to variable first
+
+    # Lazy imports are intentional for performance
+    "PLC0415",  # import should be at the top-level of a file (conflicts with lazy imports)
 
 ]
 
@@ -298,7 +304,7 @@ max-statements = 80
 # Test files can use magic numbers and have complex fixtures
 "tests/*.py" = ["PLR2004", "S101", "PLR0913", "PLR0915"]
 # Scripts can have more relaxed rules
-"scripts/*.py" = ["T201", "PLR2004", "INP001"]
+"scripts/*.py" = ["T201", "PLR2004", "INP001", "S603", "S607"]
 # Notebooks can have more relaxed rules
 "*.ipynb" = ["T201", "E402", "F401", "PLR2004"]
 
