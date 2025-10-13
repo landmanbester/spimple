@@ -15,7 +15,7 @@ classifiers = [
 ]
 dependencies = [
     "typer>=0.12.0",
-    "hip-cargo @ git+https://github.com/landmanbester/hip-cargo.git@demotools",
+    "hip-cargo @ git+https://github.com/landmanbester/hip-cargo.git",
 ]
 
 [project.urls]
@@ -77,8 +77,8 @@ src = "pyproject.toml"
 search = 'version = "{current_version}"'
 
 [[tool.tbump.file]]
-src = "spimple/__init__.py"
-search = "__version__='{current_version}'"
+src = "src/spimple/__init__.py"
+search = '__version__ = "{current_version}"'
 
 # You can specify a list of commands to
 # run after the files have been patched
@@ -88,11 +88,11 @@ search = "__version__='{current_version}'"
 #  name = "check changelog"
 #  cmd = "grep -q {new_version} Changelog.rst"
 
-# Or run some commands after the git tag and the branch
-# have been pushed:
-#  [[tool.tbump.after_push]]
-#  name = "publish"
-#  cmd = "./publish.sh"
+# Run commands after the git tag and branch have been pushed
+# This creates a GitHub release which triggers the container build workflow
+[[tool.tbump.after_push]]
+name = "create github release"
+cmd = "gh release create v{new_version} --generate-notes"
 
 [tool.ruff]
 # Set the maximum line length to 88.

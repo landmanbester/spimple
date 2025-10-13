@@ -727,7 +727,7 @@ wheels = [
 [[package]]
 name = "hip-cargo"
 version = "0.1.0"
-source = { git = "https://github.com/landmanbester/hip-cargo.git?rev=demotools#119a7df16b4d7caf40840944ddd5872380e6e84f" }
+source = { git = "https://github.com/landmanbester/hip-cargo.git#6589bf440028afd34e4a309a77ecfeffdedd6630" }
 dependencies = [
     { name = "pyyaml" },
     { name = "typer" },
@@ -2265,7 +2265,7 @@ dev = [
 requires-dist = [
     { name = "codex-africanus", extras = ["complete"], marker = "extra == 'full'" },
     { name = "dask-ms", extras = ["xarray"], marker = "extra == 'full'", specifier = ">=0.2.22" },
-    { name = "hip-cargo", git = "https://github.com/landmanbester/hip-cargo.git?rev=demotools" },
+    { name = "hip-cargo", git = "https://github.com/landmanbester/hip-cargo.git" },
     { name = "katbeam", marker = "extra == 'full'" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "omegaconf", marker = "extra == 'full'" },

@@ -3,7 +3,8 @@ name: Build and Push Docker Image
 on:
   release:
     types: [published]
-  workflow_dispatch:  # Allow manual triggering for testing
+  # Remove workflow_dispatch if you only want releases to trigger builds
+  # workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
@@ -14,7 +15,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # Required for pushing to GHCR
+      packages: write
+      id-token: write  # Required for attestation
+      attestations: write  # Required for attestation
 
     steps:
       - name: Checkout repository
@@ -30,37 +33,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract version from release tag
-        id: get_version
-        run: |
-          if [ "${{ github.event_name }}" = "release" ]; then
-            # Remove 'v' prefix if present (e.g., v0.0.5 -> 0.0.5)
-            VERSION=${{ github.event.release.tag_name }}
-            VERSION=${VERSION#v}
-          else
-            # For manual workflow dispatch, use 'dev'
-            VERSION="dev"
-          fi
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
-          echo "Building version: ${VERSION}"
-
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=semver,pattern={{version}},value=${{ steps.get_version.outputs.version }}
-            type=semver,pattern={{major}}.{{minor}},value=${{ steps.get_version.outputs.version }}
-            type=semver,pattern={{major}},value=${{ steps.get_version.outputs.version }}
-            type=raw,value=latest,enable={{is_default_branch}}
+            # For releases: v0.0.5 -> 0.0.5
+            type=semver,pattern={{version}}
+            # For releases: v0.0.5 -> 0.0
+            type=semver,pattern={{major}}.{{minor}}
+            # For releases: v0.0.5 -> 0
+            type=semver,pattern={{major}}
+            # Always tag with 'latest'
+            type=raw,value=latest
 
-      - name: Build Docker image
+      - name: Build Docker image (for testing)
         uses: docker/build-push-action@v5
         with:
           context: .
-          push: false  # Don't push yet, we test first
-          load: true   # Load into local Docker for testing
+          push: false
+          load: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
@@ -68,26 +61,31 @@ jobs:
 
       - name: Test Docker image
         run: |
+          # Extract the first tag for testing
+          TEST_TAG=$(echo "${{ steps.meta.outputs.tags }}" | head -n1)
+          echo "Testing with tag: ${TEST_TAG}"
+          
           # Test 1: Check spimple help works
           echo "Testing spimple help..."
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.version }}
-
+          docker run --rm ${TEST_TAG}
+          
           # Test 2: Check all commands are available
           echo "Testing imconv command..."
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.version }} imconv --help
-
+          docker run --rm ${TEST_TAG} imconv --help
+          
           echo "Testing spifit command..."
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.version }} spifit --help
-
+          docker run --rm ${TEST_TAG} spifit --help
+          
           echo "Testing binterp command..."
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.version }} binterp --help
-
+          docker run --rm ${TEST_TAG} binterp --help
+          
           echo "Testing mosaic command..."
-          docker run --rm ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.get_version.outputs.version }} mosaic --help
-
+          docker run --rm ${TEST_TAG} mosaic --help
+          
           echo "All tests passed!"
 
       - name: Push Docker image
+        id: push
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -101,5 +99,5 @@ jobs:
         uses: actions/attest-build-provenance@v1
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.build.outputs.digest }}
+          subject-digest: ${{ steps.push.outputs.digest }}
           push-to-registry: true
