@@ -25,7 +25,7 @@ def spifit(
     threshold: float = 10,
     maxDR: float = 1000,
     nthreads: int | None = None,
-    pfb_min: float = 0.15,
+    pb_min: float = 0.15,
     products: str = "aeikIcmrbd",
     padding_frac: float = 0.5,
     dont_convolve: bool = False,
@@ -67,7 +67,7 @@ def spifit(
     print(f"     {'threshold':>25} = {threshold}", file=log)
     print(f"     {'maxDR':>25} = {maxDR}", file=log)
     print(f"     {'nthreads':>25} = {nthreads}", file=log)
-    print(f"     {'pfb_min':>25} = {pfb_min}", file=log)
+    print(f"     {'pfb_min':>25} = {pb_min}", file=log)
     print(f"     {'products':>25} = {products}", file=log)
     print(f"     {'padding_frac':>25} = {padding_frac}", file=log)
     print(f"     {'dont_convolve':>25} = {dont_convolve}", file=log)
@@ -266,7 +266,7 @@ def spifit(
         beam_image = np.ones(model.shape, dtype=out_dtype)
 
     # beam cut off
-    model = np.where(beam_image > pfb_min, model, 0.0)
+    model = np.where(beam_image > pb_min, model, 0.0)
 
     if not dont_convolve:
         print("Convolving model", file=log)

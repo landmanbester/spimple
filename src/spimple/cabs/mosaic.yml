@@ -1,70 +1,64 @@
 cabs:
   mosaic:
     flavour: python
-    command: (spimple.cli.mosaic)mosaic
+    command: (spimple.core.mosaic)mosaic
     info: Mosaic multiple FITS images together onto a common coordinate grid.
     policies:
       pass_missing_as_none: true
     inputs:
       images:
+        info: List of FITS images to mosaic together
         dtype: List[str]
-        info: ''
-        required: true
-        policies:
-          repeat: list
-      output_filename:
-        dtype: File
-        info: ''
         required: true
       beam_model:
-        dtype: str
-        info: ''
-        required: false
+        info: Fits beam model to use. Use power_beam_maker to make power beam corresponding
+          to image.
+        dtype: File
       band:
-        dtype: str
-        info: ''
-        required: true
+        info: Band to use with JimBeam. L, UHF or S
+        default: L
       ref_image:
-        dtype: str
-        info: ''
-        required: false
+        info: Reference image to define the output coordinate system. If not provided,
+          an optimal reference will be attempted.
+        dtype: File
       padding:
+        info: Padding factor for FFTs.
         dtype: float
-        info: ''
-        required: true
+        default: 0.1
       method:
-        dtype: str
-        info: ''
-        required: true
+        info: Reprojection method, see reproject for details.
+        choices:
+        - interp
+        - adaptive
+        - exact
+        default: interp
       nthreads:
+        info: Number of threads to use per worker.
         dtype: int
-        info: ''
-        required: true
+        default: 1
       nworkers:
+        info: Number of workers to use for parallel processing.
         dtype: int
-        info: ''
-        required: true
+        default: 1
       out_dtype:
-        dtype: str
-        info: ''
-        required: true
+        info: Data type of output. Default is single precision
+        default: f4
       convolve:
+        info: Flag to convolve images to common resolution before projection. If no
+          psf-pars are passed in the lowest resolution will be determined automatically.
         dtype: bool
-        info: ''
-        required: false
-        default: --convolve
+        default: false
       redo_project:
+        info: Force re-projection even if output exists.
         dtype: bool
-        info: ''
-        required: false
-        default: --redo-project
+        default: false
       debug:
+        info: Run everything in local mode to assist with debugging.
         dtype: bool
-        info: ''
-        required: false
-        default: --debug
+        default: false
     outputs:
       output_filename:
         dtype: File
         info: '{current.output_filename}.fits'
         required: false
+        implicit: false

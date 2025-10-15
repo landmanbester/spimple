@@ -1,113 +1,135 @@
 cabs:
   spifit:
     flavour: python
-    command: (spimple.cli.spifit)spifit
-    info: Fit spectral index map.
-    image: # tell to stimela where to get cab for this version of package
-      name: 
-      version:
+    command: (spimple.core.spifit)spifit
+    info: Fit spectral index models to image cubes with optional convolution and primary
+      beam correction.
     policies:
       pass_missing_as_none: true
     inputs:
       image:
+        info: Image to process
         dtype: List[str]
-        info: ''
-        required: true
-        policies:
-          repeat: list
-      output_filename:
-        dtype: File
-        info: ''
         required: true
       residual:
-        dtype: str
-        info: ''
-        required: false
+        info: Image to process
+        dtype: List[str]
       psf_pars:
-        dtype: str
-        info: ''
-        required: false
+        info: PSF (beam) parameters matching FWHM of restoring beam specified as emaj
+          emin pa. Taken from the fits header by default.
+        dtype: Tuple[float, float, float]
       circ_psf:
+        info: Flag to use circular restoring PSF (beam)
         dtype: bool
-        info: ''
-        required: false
-        default: --circ-psf
+        default: false
       threshold:
+        info: Multiple of the rms in the residual to threshold on. Only components
+          above threshold*rms will be fit.
         dtype: float
-        info: ''
-        required: true
+        default: 10
       maxDR:
+        info: Maximum dynamic range used to determine the threshold. Only used when
+          residual is not available.
         dtype: float
-        info: ''
-        required: true
+        default: 1000
       nthreads:
-        dtype: str
-        info: ''
-        required: false
-      pfb_min:
-        dtype: float
-        info: ''
-        required: true
-      products:
-        dtype: str
-        info: ''
-        required: true
-      padding_frac:
-        dtype: float
-        info: ''
-        required: true
-      dont_convolve:
-        dtype: bool
-        info: ''
-        required: false
-        default: --dont-convolve
-      channel_weights_keyword:
-        dtype: str
-        info: ''
-        required: true
-      channel_freqs:
-        dtype: str
-        info: ''
-        required: false
-      ref_freq:
-        dtype: str
-        info: ''
-        required: false
-      out_dtype:
-        dtype: str
-        info: ''
-        required: true
-      add_convolved_residuals:
-        dtype: bool
-        info: ''
-        required: false
-        default: --add_convolved_residuals
-      ms:
-        dtype: str
-        info: ''
-        required: false
-      beam_model:
-        dtype: str
-        info: ''
-        required: false
-      sparsify_time:
+        info: Number of threads to use. Defaults to all
         dtype: int
-        info: ''
-        required: true
+      pb_min:
+        info: Don't fit components where the primary beam is less than this
+        dtype: float
+        default: 0.15
+      products:
+        info: '
+
+          Outputs to write. Letter correspond to:
+
+
+          a - alpha map
+
+
+          e - alpha error map
+
+
+          i - I0 map
+
+
+          k - I0 error map
+
+
+          I - reconstructed cube form alpha and I0
+
+
+          c - restoring beam used for convolution
+
+
+          m - convolved model
+
+
+          r - convolved residual
+
+
+          b - average power beam
+
+
+          d - difference between data and fitted model
+
+
+          Default is to write all of them
+
+          '
+        default: aeikIcmrbd
+      padding_frac:
+        info: Padding factor for FFT's.
+        dtype: float
+        default: 0.5
+      dont_convolve:
+        info: Disable convolution with clean PSF (beam)
+        dtype: bool
+        default: false
+      channel_weights_keyword:
+        info: Header keyword for channel weight
+        default: WSCIMWG
+      channel_freqs:
+        info: Optional channel frequencies to overwrite fits coordinates.Has to be
+          passed in as a comma separated string.
+      ref_freq:
+        info: Optional reference frequency to overwrite default taken from fits
+        dtype: float
+      out_dtype:
+        info: dtype of output images
+        default: f4
+      add_convolved_residuals:
+        info: Flag to add the convolved residuals to the convolved model
+        dtype: bool
+        default: false
+      ms:
+        info: Optional path to MS used to get the paralactic angle rotation
+        dtype: MS
+      beam_model:
+        info: Beam model to use. This can be provided as fits files in which caseit
+          assumes the path/to/beam_folder/name_corr_re/im.fits pattern. Also accepts
+          JimBeam in which case it will get the beam from katbeam.
+        dtype: File
+      sparsify_time:
+        info: Subsample PA by this many integrations when computing PA during beam
+          interpolation.
+        dtype: int
+        default: 10
       corr_type:
-        dtype: str
-        info: ''
-        required: true
+        info: Correlation type
+        choices:
+        - linear
+        - circular
+        default: linear
       band:
-        dtype: str
-        info: ''
-        required: true
+        info: Band to use with JimBeam. L, UHF or S
+        default: L
       deselect_bands:
-        dtype: str
-        info: ''
-        required: false
+        info: Optional bands to select. Has to be passed in as a comma separated string
     outputs:
       output_filename:
         dtype: File
-        info: '{current.output_filename}.fits'
-        required: false
+        info: Path to output directory + prefix
+        required: true
+        implicit: false

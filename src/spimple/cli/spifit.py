@@ -1,9 +1,12 @@
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NewType
 
 from hip_cargo import stimela_cab, stimela_output
 from hip_cargo.callbacks import expand_patterns
 import typer
+
+File = NewType("File", Path)
+MS = NewType("MS", Path)
 
 
 @stimela_cab(
@@ -11,10 +14,10 @@ import typer
     info="Fit spectral index map.",
     policies={"pass_missing_as_none": True},
 )
-@stimela_output(name="output_filename", dtype="File", info="{current.output_filename}.fits")
+@stimela_output(name="output_filename", dtype="File", info="Path to output directory + prefix", required=True)
 def spifit(
     image: Annotated[list[str], typer.Option(..., callback=expand_patterns, help="Image to process")],
-    output_filename: Annotated[Path, typer.Option(..., help="Path to output directory + prefix")],
+    output_filename: Annotated[File, typer.Option(..., parser=File, help="Path to output directory + prefix")],
     residual: Annotated[list[str] | None, typer.Option(callback=expand_patterns, help="Image to process")] = None,
     psf_pars: Annotated[
         tuple[float, float, float] | None,
@@ -37,31 +40,42 @@ def spifit(
         ),
     ] = 1000,
     nthreads: Annotated[int | None, typer.Option(help="Number of threads to use. Defaults to all")] = None,
-    pfb_min: Annotated[
-        float, typer.Option(help="Don't fit components where the primary beam is less than this")
-    ] = 0.15,
+    pb_min: Annotated[float, typer.Option(help="Don't fit components where the primary beam is less than this")] = 0.15,
     products: Annotated[
         str,
         typer.Option(
-            help="Outputs to write. Letter correspond to: \n"
-            "a - alpha map \n"
-            "e - alpha error map \n"
-            "i - I0 map \n"
-            "k - I0 error map \n"
-            "I - reconstructed cube form alpha and I0 \n"
-            "c - restoring beam used for convolution \n"
-            "m - convolved model \n"
-            "r - convolved residual \n"
-            "b - average power beam \n"
-            "d - difference between data and fitted model \n"
-            "Default is to write all of them"
+            help="""
+Outputs to write. Letter correspond to:
+
+a - alpha map
+
+e - alpha error map
+
+i - I0 map
+
+k - I0 error map
+
+I - reconstructed cube form alpha and I0
+
+c - restoring beam used for convolution
+
+m - convolved model
+
+r - convolved residual
+
+b - average power beam
+
+d - difference between data and fitted model
+
+Default is to write all of them
+"""
         ),
     ] = "aeikIcmrbd",
     padding_frac: Annotated[float, typer.Option(help="Padding factor for FFT's.")] = 0.5,
     dont_convolve: Annotated[
         bool, typer.Option("--dont-convolve", help="Disable convolution with clean PSF (beam)")
     ] = False,
-    channel_weights_keyword: Annotated[str, typer.Option(help="Header for channel weight")] = "WSCIMWG",
+    channel_weights_keyword: Annotated[str, typer.Option(help="Header keyword for channel weight")] = "WSCIMWG",
     channel_freqs: Annotated[
         str | None,
         typer.Option(
@@ -78,14 +92,15 @@ def spifit(
         typer.Option("--add_convolved_residuals", help="Flag to add the convolved residuals to the convolved model"),
     ] = False,
     ms: Annotated[
-        Path | None, typer.Option(help="Optional path to MS used to get the paralactic angle rotation")
+        MS | None, typer.Option(parser=MS, help="Optional path to MS used to get the paralactic angle rotation")
     ] = None,
     beam_model: Annotated[
-        Path | None,
+        File | None,
         typer.Option(
+            parser=File,
             help="Beam model to use. This can be provided as fits files in which case"
             "it assumes the path/to/beam_folder/name_corr_re/im.fits pattern. "
-            "Also accepts JimBeam in which case it will get the beam from katbeam."
+            "Also accepts JimBeam in which case it will get the beam from katbeam.",
         ),
     ] = None,
     sparsify_time: Annotated[
@@ -128,7 +143,7 @@ def spifit(
         threshold=threshold,
         maxDR=maxDR,
         nthreads=nthreads,
-        pfb_min=pfb_min,
+        pb_min=pb_min,
         products=products,
         padding_frac=padding_frac,
         dont_convolve=dont_convolve,

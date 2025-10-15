@@ -1,8 +1,10 @@
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, NewType
 
 from hip_cargo import stimela_cab, stimela_output
 import typer
+
+File = NewType("File", Path)
 
 
 @stimela_cab(
@@ -13,7 +15,7 @@ import typer
 @stimela_output(name="output_filename", dtype="File", info="{current.output_filename}.fits")
 def imconv(
     image: Annotated[list[str], typer.Option(..., help="Image to convolve")],
-    output_filename: Annotated[Path, typer.Option(..., help="Path to output directory")],
+    output_filename: Annotated[File, typer.Option(..., parser=File, help="Path to output directory")],
     products: Annotated[
         str,
         typer.Option(
@@ -40,8 +42,10 @@ def imconv(
         float, typer.Option(help="Dilate the psf-pars in fits header by this amount. Sometimes required for stability.")
     ] = 1.05,
     beam_model: Annotated[
-        Path | None,
-        typer.Option(help="Fits beam model to use. Use power_beam_maker to make power beam corresponding to image."),
+        File | None,
+        typer.Option(
+            parser=File, help="Fits beam model to use. Use power_beam_maker to make power beam corresponding to image."
+        ),
     ] = None,
     band: Annotated[str, typer.Option(help="Band to use with JimBeam. L, UHF or S")] = "L",
     pb_min: Annotated[float, typer.Option(help="Set image to zero where primary beam falls below this value")] = 0.05,

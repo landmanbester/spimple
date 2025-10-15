@@ -1,9 +1,12 @@
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NewType
 
 from hip_cargo import stimela_cab, stimela_output
 from hip_cargo.callbacks import expand_patterns
 import typer
+
+File = NewType("File", Path)
+MS = NewType("MS", Path)
 
 
 @stimela_cab(
@@ -16,17 +19,20 @@ def mosaic(
     images: Annotated[
         list[str], typer.Option(..., callback=expand_patterns, help="List of FITS images to mosaic together")
     ],
-    output_filename: Annotated[Path, typer.Option(..., help="Path to output mosaic FITS file")],
+    output_filename: Annotated[File, typer.Option(..., parser=File, help="Path to output mosaic FITS file")],
     beam_model: Annotated[
-        str | None,
-        typer.Option(help="Fits beam model to use. Use power_beam_maker to make power beam corresponding to image."),
+        File | None,
+        typer.Option(
+            parser=File, help="Fits beam model to use. Use power_beam_maker to make power beam corresponding to image."
+        ),
     ] = None,
     band: Annotated[str, typer.Option(help="Band to use with JimBeam. L, UHF or S")] = "L",
     ref_image: Annotated[
-        str | None,
+        File | None,
         typer.Option(
+            parser=File,
             help="Reference image to define the output coordinate system. "
-            "If not provided, an optimal reference will be attempted."
+            "If not provided, an optimal reference will be attempted.",
         ),
     ] = None,
     padding: Annotated[float, typer.Option(help="Padding factor for FFTs.")] = 0.1,
