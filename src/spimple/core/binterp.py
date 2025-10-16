@@ -16,7 +16,7 @@ log = pyscilog.get_logger("BINTERP")
 def binterp(
     image: list[str],
     output_filename: str,
-    ms: list[str] | None = None,
+    ms: str | None = None,
     field: int = 0,
     beam_model: str | None = None,
     sparsify_time: int = 10,

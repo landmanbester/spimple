@@ -128,15 +128,10 @@ Default is to write all of them
     if deselect_bands is not None:
         deselect_bands_list = [int(x.strip()) for x in deselect_bands.split(",")]
 
-    # Convert Path types to strings for core function
-    ms_str = str(ms) if ms is not None else None
-    beam_model_str = str(beam_model) if beam_model is not None else None
-    output_filename_str = str(output_filename)
-
     # Call the core function with all parameters
     spifit_core(
         image=image,
-        output_filename=output_filename_str,
+        output_filename=output_filename,
         residual=residual,
         psf_pars=psf_pars,
         circ_psf=circ_psf,
@@ -152,8 +147,8 @@ Default is to write all of them
         ref_freq=ref_freq,
         out_dtype=out_dtype,
         add_convolved_residuals=add_convolved_residuals,
-        ms=[ms_str] if ms_str is not None else None,
-        beam_model=beam_model_str,
+        ms=ms,
+        beam_model=beam_model,
         sparsify_time=sparsify_time,
         corr_type=corr_type,
         band=band,

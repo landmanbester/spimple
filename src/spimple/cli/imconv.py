@@ -19,11 +19,16 @@ def imconv(
     products: Annotated[
         str,
         typer.Option(
-            help="Outputs to write. Letters correspond to: \n"
-            "c - restoring beam used for convolution \n"
-            "i - convolved image \n"
-            "b - average power beam \n"
-            "w - beam**2 weight image to use for mosaicing"
+            help="""Outputs to write. Letters correspond to:
+
+    c - restoring beam used for convolution
+
+    i - convolved image
+
+    b - average power beam
+
+    w - beam**2 weight image to use for mosaicing
+"""
         ),
     ] = "i",
     psf_pars: Annotated[

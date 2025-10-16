@@ -26,8 +26,7 @@ def binterp(
         typer.Option(
             parser=MS,
             help="Measurement sets used to make the image. "
-            "Used to get paralactic angles if doing primary beam correction. "
-            "Pass as comma-separated string.",
+            "Used to get paralactic angles if doing primary beam correction. ",
         ),
     ] = None,
     field: Annotated[int, typer.Option(help="Field ID")] = 0,
@@ -58,22 +57,13 @@ def binterp(
     # Lazy import the core implementation
     from spimple.core.binterp import binterp as binterp_core
 
-    # Parse ms if provided as comma-separated string
-    ms_list = None
-    if ms is not None:
-        ms_list = [x.strip() for x in ms.split(",")]
-
-    # Convert Path types to strings for core function
-    beam_model_str = str(beam_model) if beam_model is not None else None
-    output_filename_str = str(output_filename)
-
     # Call the core function with all parameters
     binterp_core(
         image=image,
-        output_filename=output_filename_str,
-        ms=ms_list,
+        output_filename=output_filename,
+        ms=ms,
         field=field,
-        beam_model=beam_model_str,
+        beam_model=beam_model,
         sparsify_time=sparsify_time,
         nthreads=nthreads,
         corr_type=corr_type,

@@ -12,7 +12,7 @@ cabs:
         required: true
       ms:
         info: Measurement sets used to make the image. Used to get paralactic angles
-          if doing primary beam correction. Pass as comma-separated string.
+          if doing primary beam correction.
         dtype: MS
       field:
         info: Field ID

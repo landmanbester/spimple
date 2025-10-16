@@ -68,13 +68,10 @@ def mosaic(
     # Lazy import the core implementation
     from spimple.core.mosaic import mosaic as mosaic_core
 
-    # Convert Path to string for core function
-    output_filename_str = str(output_filename)
-
     # Call the core function with all parameters
     mosaic_core(
         images=images,
-        output_filename=output_filename_str,
+        output_filename=output_filename,
         beam_model=beam_model,
         band=band,
         ref_image=ref_image,
