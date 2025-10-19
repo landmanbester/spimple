@@ -93,6 +93,7 @@ cabs:
       channel_freqs:
         info: Optional channel frequencies to overwrite fits coordinates.Has to be
           passed in as a comma separated string.
+        dtype: List[float]
       ref_freq:
         info: Optional reference frequency to overwrite default taken from fits
         dtype: float
@@ -126,7 +127,8 @@ cabs:
         info: Band to use with JimBeam. L, UHF or S
         default: L
       deselect_bands:
-        info: Optional bands to select. Has to be passed in as a comma separated string
+        info: Optional bands to select. Has to be passed in as a comma separated string.
+        dtype: List[int]
     outputs:
       output_filename:
         dtype: File

@@ -79,8 +79,9 @@ Default is to write all of them
     channel_freqs: Annotated[
         str | None,
         typer.Option(
-            help="Optional channel frequencies to overwrite fits coordinates."
-            "Has to be passed in as a comma separated string."
+            help="Optional channel frequencies to overwrite fits coordinates. "
+            "Has to be passed in as a comma separated string. "
+            "Stimela dtype: List[float]"
         ),
     ] = None,
     ref_freq: Annotated[
@@ -109,7 +110,8 @@ Default is to write all of them
     corr_type: Annotated[Literal["linear", "circular"], typer.Option(help="Correlation type")] = "linear",
     band: Annotated[str, typer.Option(help="Band to use with JimBeam. L, UHF or S")] = "L",
     deselect_bands: Annotated[
-        str | None, typer.Option(help="Optional bands to select. Has to be passed in as a comma separated string")
+        str | None, typer.Option(help="Optional bands to select. Has to be passed in as a comma separated string."
+                                      "Stimela dtype: List[int]")
     ] = None,
 ):
     """

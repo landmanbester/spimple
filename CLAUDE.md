@@ -16,10 +16,10 @@ Spimple is a radio astronomy image post-processing tool for spectral index fitti
 The codebase follows a simple structure:
 - `/spimple/apps/`: Contains the four main application entry points (spi_fitter.py, image_convolver.py, power_beam_maker.py, mosaic.py)
 - `/spimple/utils.py`: Core utility functions for image processing, convolution, and FITS handling
-- All applications use `pyscilog` for logging and `omegaconf` for configuration management
+- All applications use `pyscilog` for logging
 - Heavy computation relies on `dask` arrays and `africanus` radio astronomy tools
 
-Key dependencies: astropy, dask, africanus, katbeam, omegaconf, pyscilog, reproject
+Key dependencies: astropy, dask, africanus, katbeam, pyscilog, reproject
 
 ## Development Commands
 
@@ -70,7 +70,7 @@ poetry install --only main
 
 ## Key Implementation Notes
 
-- All three apps follow similar patterns: argparse CLI → omegaconf config → pyscilog logging setup
+- All three apps follow hip-cargo pattern and use typer to create lightweight CLI interfaces with lazy imports to heavy dependencies
 - Image processing uses FITS format via astropy
 - Convolution operations use FFT-based methods with dask arrays for memory efficiency
 - Primary beam models support real/imaginary FITS patterns and JimBeam models
