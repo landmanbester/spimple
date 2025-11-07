@@ -54,6 +54,9 @@ jobs:
        github.ref == 'refs/heads/master' ||
        github.ref == 'refs/heads/main')
 
+    permissions:
+      id-token: write
+
     steps:
       - name: Checkout source
         uses: actions/checkout@v5
@@ -76,5 +79,3 @@ jobs:
       - name: Publish distribution 📦 to PyPI
         if: startsWith(github.ref, 'refs/tags/')
         uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          password: ${{ secrets.SPIMPLE_TOKEN }}
