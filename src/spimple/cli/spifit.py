@@ -1,21 +1,26 @@
 from pathlib import Path
 from typing import Annotated, Literal
-
+from typing import NewType
 from hip_cargo import stimela_cab, stimela_output
-from hip_cargo.callbacks import expand_patterns
 import typer
+
+MS = NewType("MS", Path)
 
 
 @stimela_cab(
     name="spifit",
     info="Fit spectral index map.",
-    policies={"pass_missing_as_none": True},
 )
-@stimela_output(name="output_filename", dtype="File", info="{current.output_filename}.fits")
+@stimela_output(
+    name="output_prefix",
+    dtype="File",
+    implicit="{current.output_prefix}",
+    info="Output filename prefix for the spifit products.",
+)
 def spifit(
-    image: Annotated[list[str], typer.Option(..., callback=expand_patterns, help="Image to process")],
-    output_filename: Annotated[Path, typer.Option(..., help="Path to output directory + prefix")],
-    residual: Annotated[list[str] | None, typer.Option(callback=expand_patterns, help="Image to process")] = None,
+    image: Annotated[list[str], typer.Option(..., help="Image to process")],
+    output_prefix: Annotated[Path, typer.Option(..., help="Path to output directory + prefix")],
+    residual: Annotated[list[str] | None, typer.Option(help="Residual image to process")] = None,
     psf_pars: Annotated[
         tuple[float, float, float] | None,
         typer.Option(
@@ -78,7 +83,7 @@ def spifit(
         typer.Option("--add_convolved_residuals", help="Flag to add the convolved residuals to the convolved model"),
     ] = False,
     ms: Annotated[
-        Path | None, typer.Option(help="Optional path to MS used to get the paralactic angle rotation")
+        MS | None, typer.Option(parser=MS, help="Optional path to MS used to get the paralactic angle rotation")
     ] = None,
     beam_model: Annotated[
         Path | None,
@@ -116,12 +121,12 @@ def spifit(
     # Convert Path types to strings for core function
     ms_str = str(ms) if ms is not None else None
     beam_model_str = str(beam_model) if beam_model is not None else None
-    output_filename_str = str(output_filename)
+    output_prefix_str = str(output_prefix)
 
     # Call the core function with all parameters
     spifit_core(
         image=image,
-        output_filename=output_filename_str,
+        output_filename=output_prefix_str,
         residual=residual,
         psf_pars=psf_pars,
         circ_psf=circ_psf,
