@@ -145,3 +145,38 @@ def test_psfpars_from_header_raises_when_no_beam_is_present():
 
 def test_product_vars_match_the_pfb_restore_contract():
     assert PRODUCT_VARS == {"a": "BIMAGE", "i": "IMAGE", "k": "KIMAGE"}
+
+
+def test_pfb_tree_fixture_satisfies_the_contract(pfb_tree):
+    """The synthetic pfb tree is what every consumer is written against."""
+    dt = open_store(pfb_tree)
+    nodes = band_nodes(dt)
+
+    assert len(nodes) >= 2
+    assert dt.attrs["product"] == "I"
+
+    for node in nodes:
+        ds = dt[node].ds
+        require_vars(
+            ds,
+            ["IMAGE", "BIMAGE", "KIMAGE", "BEAM", "WSUM", "PSFPARSN", "PSFPARSF"],
+            node,
+            "the fixture is malformed",
+        )
+        assert ds.IMAGE.dims == ("corr", "y", "x")
+        assert ds.WSUM.dims == ("corr",)
+        assert ds.PSFPARSF.dims == ("corr", "bpar")
+        for key in ("bandid", "timeid", "freq_out", "ra", "dec", "cell_rad", "time_out"):
+            assert key in ds.attrs
+
+    check_homogeneous([dt[node].ds for node in nodes])
+
+
+def test_pfb_tree_partitions_declare_the_folded_n_term(pfb_tree):
+    """pfb stores BEAM as B/n; consumers must be able to detect that."""
+    dt = open_store(pfb_tree)
+    node = band_nodes(dt)[0]
+    parts = partition_nodes(dt, node)
+
+    assert parts == ["part0000"]
+    assert dt[f"{node}/{parts[0]}"].ds.attrs["beam_includes_n"] is True

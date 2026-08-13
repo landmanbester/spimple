@@ -141,3 +141,102 @@ def residual_cube(tmp_path_factory):
     rng = np.random.default_rng(7)
     noise = rng.normal(scale=1e-3, size=(NCHAN, NPIX, NPIX)).astype(np.float32)
     return _write(path, _shape_for(noise, 4), hdr)
+
+
+NBAND_TREE = 4
+NCORR_TREE = 1
+CELL_RAD = np.deg2rad(CELL_DEG)
+BPAR = ["BMAJ", "BMIN", "BPA"]
+
+
+def _tree_beam(npix: int) -> np.ndarray:
+    """A smooth, circularly symmetric response peaking at 1.0 in the centre."""
+    v = np.arange(npix) - npix // 2
+    yy, xx = np.meshgrid(v, v, indexing="ij")
+    return np.exp(-(xx**2 + yy**2) / (2 * (npix / 2.5) ** 2))
+
+
+@pytest.fixture(scope="session")
+def pfb_tree(tmp_path_factory):
+    """A synthetic pfb-shaped DataTree, homogenised, with spectral index TRUE_ALPHA.
+
+    Built to the layout documented in pfb-imaging's docs/wiki/imager-pipeline.md
+    (verified against pfb-imaging commit b84407b, branch dev-0.1.0). If that page
+    changes, this fixture must be re-checked -- it is the only thing standing
+    between spimple's consumers and the real contract.
+
+    Everything is (corr, y, x). PSFPARSN and PSFPARSF are in pixels and radians.
+    """
+    from spimple.utils.datatree import band_node_name, create_store, partition_node_name, write_node
+
+    url = str(tmp_path_factory.mktemp("tree") / "synth_I.dt")
+    freqs = frequencies()
+    beam = _tree_beam(NPIX)[None]  # (ncorr, ny, nx)
+    cube = _power_law_cube(TRUE_ALPHA, seed=11)  # (nband, ny, nx), intrinsic
+    rng = np.random.default_rng(3)
+    # homogenised: every band already sits at the same resolution
+    psfparsf = np.tile([8.0, 6.4, 0.0], (NCORR_TREE, 1))
+
+    create_store(
+        url,
+        {
+            "spimple_version": "test",
+            "product": "I",
+            "nband": NBAND_TREE,
+            "ntime": 1,
+            "nx": NPIX,
+            "ny": NPIX,
+            "cell_rad": CELL_RAD,
+        },
+        overwrite=True,
+    )
+
+    for band in range(NBAND_TREE):
+        intrinsic = cube[band][None].astype(np.float32)
+        apparent = (intrinsic * beam).astype(np.float32)
+        residual = rng.normal(scale=1e-3, size=intrinsic.shape).astype(np.float32)
+        wsum = np.array([1.0 + band], dtype=np.float32)
+        node = band_node_name(band, 0)
+        write_node(
+            url,
+            node,
+            {
+                "MODEL": (("corr", "y", "x"), intrinsic),
+                "RESIDUAL": (("corr", "y", "x"), (residual * wsum[:, None, None]).astype(np.float32)),
+                "IMAGE": (("corr", "y", "x"), intrinsic),
+                "BIMAGE": (("corr", "y", "x"), apparent),
+                "KIMAGE": (("corr", "y", "x"), (apparent + residual).astype(np.float32)),
+                "BEAM": (("corr", "y", "x"), beam.astype(np.float32)),
+                "WSUM": (("corr",), wsum),
+                "PSFPARSN": (("corr", "bpar"), psfparsf.astype(np.float32)),
+                "PSFPARSF": (("corr", "bpar"), psfparsf.astype(np.float32)),
+            },
+            {
+                "bandid": band,
+                "timeid": 0,
+                "freq_out": float(freqs[band]),
+                "freq_nominal": float(freqs[band]),
+                "time_out": 1.0e9,
+                "ra": np.deg2rad(30.0),
+                "dec": np.deg2rad(-30.0),
+                "cell_rad": CELL_RAD,
+                "l0": 0.0,
+                "m0": 0.0,
+                "pb_min": 0.15,
+            },
+            {"corr": ["I"], "bpar": BPAR},
+        )
+        write_node(
+            url,
+            f"{node}/{partition_node_name(0)}",
+            {"BEAM": (("corr", "y", "x"), beam.astype(np.float32))},
+            {
+                "field_name": "synth",
+                "ra0": np.deg2rad(30.0),
+                "dec0": np.deg2rad(-30.0),
+                "freq_out": float(freqs[band]),
+                "beam_includes_n": True,
+            },
+            {"corr": ["I"]},
+        )
+    return url
