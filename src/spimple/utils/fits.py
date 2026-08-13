@@ -1,9 +1,9 @@
 import glob
 
+import numpy as np
 from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS
-import numpy as np
 
 
 def to4d(data):
@@ -252,7 +252,7 @@ def expand_image_patterns(patterns: list[str]) -> list[str]:
         # Path.glob() raises NotImplementedError for absolute patterns (e.g. the
         # Stimela cab's usual "/data/images/*-image.fits"), so the stdlib glob
         # module is used deliberately here instead of ruff's suggested Path.glob.
-        matches = sorted(glob.glob(pattern)) if is_glob else [pattern]  # noqa: PTH207
+        matches = sorted(glob.glob(pattern)) if is_glob else [pattern]
         if not matches:
             msg = f"No files match pattern: {pattern}"
             raise FileNotFoundError(msg)

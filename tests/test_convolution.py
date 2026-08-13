@@ -1,7 +1,7 @@
-from africanus.model.spi import fit_spi_components
 import numpy as np
-from numpy.testing._private.utils import assert_allclose
 import pytest
+from africanus.model.spi import fit_spi_components
+from numpy.testing._private.utils import assert_allclose
 
 from spimple.utils.convolution import Gaussian2D, convolve2gaussres
 

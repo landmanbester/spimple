@@ -2,11 +2,11 @@
 
 import multiprocessing
 
+import dask.array as da
+import numpy as np
 from africanus.model.spi.dask import fit_spi_components
 from astropy.io import fits
-import dask.array as da
 from katbeam import JimBeam
-import numpy as np
 
 from spimple.utils.beam import interpolate_beam
 from spimple.utils.convolution import convolve2gaussres

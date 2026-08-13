@@ -2,8 +2,8 @@
 
 import multiprocessing
 
-from astropy.io import fits
 import numpy as np
+from astropy.io import fits
 
 from spimple.utils.beam import interpolate_beam
 from spimple.utils.fits import data_from_header, expand_image_patterns, save_fits, set_header_info

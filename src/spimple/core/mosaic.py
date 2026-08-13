@@ -3,9 +3,9 @@
 import multiprocessing
 from pathlib import Path
 
-from astropy.io import fits
 import numpy as np
 import ray
+from astropy.io import fits
 
 from spimple.utils.fits import expand_image_patterns, set_wcs
 from spimple.utils.logging import get_logger, log_options

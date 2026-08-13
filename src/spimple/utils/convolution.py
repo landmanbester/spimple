@@ -1,7 +1,7 @@
-from ducc0.fft import c2r, good_size, r2c
 import numpy as np
+from ducc0.fft import c2r, good_size, r2c
 
-iFs = np.fft.ifftshift
+iFs = np.fft.ifftshift  # noqa: N816 - domain idiom, paired with Fs
 Fs = np.fft.fftshift
 
 

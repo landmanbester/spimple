@@ -1,12 +1,12 @@
-from astropy.io import fits
-from astropy.wcs import WCS
 import numpy as np
 import ray
+import xarray as xr
+from astropy.io import fits
+from astropy.wcs import WCS
 from reproject import reproject_interp
 from reproject.mosaicking import find_optimal_celestial_wcs
 from scipy import ndimage
 from scipy.interpolate import RegularGridInterpolator
-import xarray as xr
 
 from spimple.utils.fits import data_from_header
 
@@ -124,10 +124,12 @@ def project(im, imnum, ref_wcs, beam, oname, method="interp"):
                 "MASK": (("l", "m"), mask),
             }
 
-            ds = xr.Dataset(data_vars, coords=im_coords, attrs=im_attrs).chunk({
-                "l": 512,
-                "m": 512,
-            })
+            ds = xr.Dataset(data_vars, coords=im_coords, attrs=im_attrs).chunk(
+                {
+                    "l": 512,
+                    "m": 512,
+                }
+            )
 
             ds_name = f"{basename}_im{imnum}_pol{c}_ch{f}.zarr"
             ds.to_zarr(ds_name, compute=True, mode="w", consolidated=False)

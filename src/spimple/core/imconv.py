@@ -3,9 +3,9 @@
 import multiprocessing
 from pathlib import Path
 
+import numpy as np
 from astropy.io import fits
 from katbeam import JimBeam
-import numpy as np
 
 from spimple.utils.convolution import convolve2gaussres
 from spimple.utils.fits import data_from_header, expand_image_patterns, load_fits, save_fits

@@ -1,8 +1,8 @@
 from pathlib import Path
 from typing import Annotated
 
-from hip_cargo import stimela_cab, stimela_output
 import typer
+from hip_cargo import stimela_cab, stimela_output
 
 
 @stimela_cab(
