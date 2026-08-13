@@ -16,7 +16,7 @@ File = NewType("File", Path)
 
 @stimela_cab(
     name="imconv",
-    info="Homogenise resolution with Gaussian convolution",
+    info="Convolve images to a common resolution. Deprecated in favour of spimple init.",
     policies={"pass_missing_as_none": True},
 )
 @stimela_output(
@@ -128,7 +128,8 @@ def imconv(
     ] = False,
 ):
     """
-    Homogenise resolution with Gaussian convolution
+    Convolve images to a common resolution.
+    Deprecated in favour of spimple init.
     """
     if backend == "native" or backend == "auto":
         try:

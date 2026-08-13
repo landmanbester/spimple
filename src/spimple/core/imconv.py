@@ -30,6 +30,11 @@ def imconv(
 ):
     log_options(log, **locals())
 
+    log.warning(
+        "imconv is deprecated and will be removed in a future release. "
+        "Use spimple init, which convolves to a common resolution while building the datatree."
+    )
+
     images = expand_image_patterns(images)
 
     if not nthreads:
