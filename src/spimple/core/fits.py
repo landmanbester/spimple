@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from pathlib import Path
+import glob
 
 from astropy.io import fits
 from astropy.time import Time
@@ -251,7 +251,10 @@ def expand_image_patterns(patterns: list[str]) -> list[str]:
         # path is passed straight through so a missing file fails later, where the
         # error message can say what was being read.
         is_glob = any(char in pattern for char in "*?[")
-        matches = sorted(str(p) for p in Path().glob(pattern)) if is_glob else [pattern]
+        # Path.glob() raises NotImplementedError for absolute patterns (e.g. the
+        # Stimela cab's usual "/data/images/*-image.fits"), so the stdlib glob
+        # module is used deliberately here instead of ruff's suggested Path.glob.
+        matches = sorted(glob.glob(pattern)) if is_glob else [pattern]  # noqa: PTH207
         if not matches:
             msg = f"No files match pattern: {pattern}"
             raise FileNotFoundError(msg)
