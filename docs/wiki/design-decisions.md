@@ -65,6 +65,17 @@ All pre-existing; none introduced by the port.
   they meant `f`, so with one correlation every channel silently got channel 0's beam
   and channel 0's frequency metadata. The neighbouring `image[c, f]` shows the intended
   convention. Found by Copilot's review of #49.
+- **The MS-driven parallactic-angle path counted flags wrongly and read out of bounds.**
+  `_unflagged_counts` derived each timeslot's upper bound from `time_idx[i + 1]`, which
+  overran on the final iteration (a numba kernel with bounds checking off, so it read
+  adjacent memory rather than raising), and the caller passed `flags.astype(np.int32)`,
+  making `~flags` a bitwise-not (`~0 == -1`) instead of a logical inversion — the
+  'unflagged count' came out negative. Each timeslot is now counted over its own rows
+  via `np.unique(..., return_counts=True)`, which is also the correct semantics under
+  `--sparsify-time`: a subsampled slot counts only its own rows, not the span to the
+  next sampled slot. `FLAG_ROW` is cast to `bool`. Covered by four unit tests in
+  `tests/test_beam.py` — the kernel is testable without a measurement set, which is how
+  the bug survived. Found by Copilot's review of #49.
 
 ## Known defects, diagnosed but not fixed
 
@@ -88,24 +99,6 @@ accepting `JimBeam` as a `--beam-model` value.
 dies with an opaque zarr `GroupNotFoundError` rather than skipping beam weighting. A
 hermetic end-to-end test needs a synthetic meerkat-beams `.bds.zarr` fixture. Covered by a
 skip in `tests/test_mosaic.py`, which does cover `mosaic_info`.
-
-### The MS-driven parallactic-angle path is broken
-
-`extract_dde_info` is unusable whenever `--ms` is supplied, for two independent reasons
-in `utils/beam.py`:
-
-- `_unflagged_counts` loops `for i in range(time_idx.size)` and reads `time_idx[i + 1]`,
-  so the final iteration indexes one past the end. It is a numba `nopython` kernel with
-  bounds checking off, so this reads adjacent memory rather than raising.
-- The caller passes `flags.astype(np.int32)`, so `~flags` is a bitwise-not over integers
-  (`~0 == -1`, `~1 == -2`) rather than a boolean inversion. The 'unflagged count' comes
-  out negative.
-
-Fixing the first needs a decision the code does not currently express: after
-`--sparsify-time` subsampling, `time_idx` entries are no longer adjacent segment starts,
-so it is ambiguous whether a subsampled timeslot should count only its own rows or the
-whole span up to the next sampled slot. Reproducing any of this needs a real measurement
-set. Found by Copilot's review of #49.
 
 ### `--channel-weights-keyword` is dead on the residual path
 

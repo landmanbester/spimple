@@ -13,10 +13,24 @@ from spimple.utils.fits import load_fits
 
 
 @jit(nopython=True, nogil=True, cache=True)
-def _unflagged_counts(flags, time_idx, out):
+def _unflagged_counts(flags, time_idx, time_counts, out):
+    """Count unflagged rows in each timeslot.
+
+    Each timeslot is counted over its own rows only -- `time_idx[i]` to
+    `time_idx[i] + time_counts[i]` -- not the span up to the next entry. That
+    distinction matters once --sparsify-time subsamples the time axis, because
+    consecutive `time_idx` entries are then no longer adjacent segments.
+
+    Args:
+        flags: Boolean FLAG_ROW column. Must be boolean, not integer: `~` on an
+            integer array is a bitwise-not (`~0 == -1`), not a logical inversion.
+        time_idx: First row index of each timeslot, from np.unique(return_index=True).
+        time_counts: Row count of each timeslot, from np.unique(return_counts=True).
+        out: Output array, one entry per timeslot.
+    """
     for i in range(time_idx.size):
         ilow = time_idx[i]
-        ihigh = time_idx[i + 1]
+        ihigh = ilow + time_counts[i]
         out[i] = np.sum(~flags[ilow:ihigh])
     return out
 
@@ -73,19 +87,21 @@ def extract_dde_info(freqs, *, ms=None, field=0, sparsify_time=10):
 
             # get unique times and count flags
             xds = xds_from_ms(ms_name, columns=["TIME", "FLAG_ROW"], group_cols=["FIELD_ID"])[field]
-            utime, time_idx = np.unique(xds.TIME.data.compute(), return_index=True)
+            utime, time_idx, time_counts = np.unique(xds.TIME.data.compute(), return_index=True, return_counts=True)
             ntime = utime.size
             # extract subset of times
             if sparsify_time > 1:
                 I = np.arange(0, ntime, sparsify_time)
                 utime = utime[I]
                 time_idx = time_idx[I]
+                time_counts = time_counts[I]
                 ntime = utime.size
 
             utimes_list.append(utime)
 
-            flags = xds.FLAG_ROW.data.compute()
-            unflag_count = _unflagged_counts(flags.astype(np.int32), time_idx, np.zeros(ntime, dtype=np.int32))
+            # FLAG_ROW stays boolean: _unflagged_counts inverts it with `~`.
+            flags = xds.FLAG_ROW.data.compute().astype(bool)
+            unflag_count = _unflagged_counts(flags, time_idx, time_counts, np.zeros(ntime, dtype=np.int32))
             unflag_counts_list.append(unflag_count)
 
         # Convert lists to numpy arrays
