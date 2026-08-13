@@ -91,7 +91,9 @@ def project(im, imnum, ref_wcs, beam, oname, method="interp"):
     for c in range(ncorr):
         for f in range(nchan):
             bdata = np.zeros((nx, ny), dtype=np.float64)
-            beami = beamo((freq[c], ll, mm))
+            # freq is per-channel, so it is indexed by f. The reprojection of
+            # image[c, f] below uses both indices and shows the convention.
+            beami = beamo((freq[f], ll, mm))
             step = 25
             angles = np.linspace(0, 359, step)
             for angle in angles:
@@ -115,7 +117,7 @@ def project(im, imnum, ref_wcs, beam, oname, method="interp"):
             )
 
             im_attrs = {
-                "freq": freq[c],
+                "freq": freq[f],
             }
 
             data_vars = {

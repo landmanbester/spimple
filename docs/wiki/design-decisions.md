@@ -4,26 +4,27 @@ title: Design decisions and known defects
 description: The decision ledger for the hip-cargo port, plus the defects diagnosed but not fixed.
 tags: [architecture, decisions, known-issues]
 timestamp: 2026-08-13
-last_verified_commit: 49ecf34
+last_verified_commit: f3c2726
 ---
 
 # Design decisions and known defects
 
-## Outstanding setup: the update-cabs GitHub App
+## Registry and automation setup
 
 `.github/workflows/update-cabs.yml` authenticates with `actions/create-github-app-token`
-using `secrets.APP_CLIENT_ID` and `secrets.APP_PRIVATE_KEY`. **This repository does not
-have those secrets**, so the workflow fails on every merge to `main` until someone does
-this once:
+using `secrets.APP_CLIENT_ID` and `secrets.APP_PRIVATE_KEY`. The App is installed on this
+repository. If those secrets are ever rotated away, the workflow fails on every merge to
+`main` and cabs stop being reset to the `:latest` tag; local pre-commit and `tbump` keep
+them in sync regardless.
 
-1. Install the GitHub App already used by `ratt-ru/pfb-imaging` onto
-   `landmanbester/spimple`, with contents read & write.
-2. Add `APP_CLIENT_ID` and `APP_PRIVATE_KEY` as repository secrets.
-3. If branch protection is on for `main`, add the App to the bypass list so its
-   `[skip checks]` commit can push.
-
-Nothing else in the port depends on this; cabs stay in sync locally via the pre-commit
-hook and on release via `tbump`.
+**GHCR package access.** `ghcr.io/landmanbester/spimple` is a *user*-namespace package. A
+user package created by a manual `docker push` is not linked to any repository, and
+`GITHUB_TOKEN` then cannot write to it — `publish-container.yml` fails with
+`denied: permission_denied: write_package` even though the repo's default workflow
+permissions are `write` and the job requests `packages: write`. The fix is a one-time
+settings change, not a workflow change: package settings → Manage Actions access → add the
+`spimple` repository with the **Write** role. (`ratt-ru/pfb-imaging` never hit this because
+an org package inherits its repository's access.)
 
 ## Decisions
 
@@ -59,6 +60,11 @@ All pre-existing; none introduced by the port.
   which additionally rejects absolute paths. `expand_image_patterns` had already done that
   work; the block is gone.
 - **`set_wcs` stamped `ORIGIN = "pfb-imaging"`** into every FITS file spimple wrote.
+- **`utils/mosaic.project` indexed the frequency array with the correlation index.**
+  Both `beamo((freq[c], ll, mm))` and the per-slice `freq` attribute used `c` where
+  they meant `f`, so with one correlation every channel silently got channel 0's beam
+  and channel 0's frequency metadata. The neighbouring `image[c, f]` shows the intended
+  convention. Found by Copilot's review of #49.
 
 ## Known defects, diagnosed but not fixed
 
@@ -83,9 +89,23 @@ dies with an opaque zarr `GroupNotFoundError` rather than skipping beam weightin
 hermetic end-to-end test needs a synthetic meerkat-beams `.bds.zarr` fixture. Covered by a
 skip in `tests/test_mosaic.py`, which does cover `mosaic_info`.
 
-Separately, `project` evaluates the beam with `beamo((freq[c], ll, mm))` — indexing the
-frequency array with the **correlation** index `c` rather than the channel index `f`. With
-one correlation this silently uses channel 0's beam for every channel.
+### The MS-driven parallactic-angle path is broken
+
+`extract_dde_info` is unusable whenever `--ms` is supplied, for two independent reasons
+in `utils/beam.py`:
+
+- `_unflagged_counts` loops `for i in range(time_idx.size)` and reads `time_idx[i + 1]`,
+  so the final iteration indexes one past the end. It is a numba `nopython` kernel with
+  bounds checking off, so this reads adjacent memory rather than raising.
+- The caller passes `flags.astype(np.int32)`, so `~flags` is a bitwise-not over integers
+  (`~0 == -1`, `~1 == -2`) rather than a boolean inversion. The 'unflagged count' comes
+  out negative.
+
+Fixing the first needs a decision the code does not currently express: after
+`--sparsify-time` subsampling, `time_idx` entries are no longer adjacent segment starts,
+so it is ambiguous whether a subsampled timeslot should count only its own rows or the
+whole span up to the next sampled slot. Reproducing any of this needs a real measurement
+set. Found by Copilot's review of #49.
 
 ### `--channel-weights-keyword` is dead on the residual path
 

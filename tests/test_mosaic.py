@@ -55,9 +55,7 @@ def test_mosaic_info_rejects_a_reference_image(image_cube_ctype3, tmp_path):
         "`mosaic` cannot run without a primary beam: utils/mosaic.project calls "
         "xr.open_zarr(beam) unconditionally, so beam=None dies with an opaque "
         "zarr GroupNotFoundError. Covering this end to end needs a synthetic "
-        "meerkat-beams .bds.zarr fixture. Separately, project indexes the "
-        "frequency axis with the correlation index (`beamo((freq[c], ll, mm))`), "
-        "which looks like it should be freq[f]."
+        "meerkat-beams .bds.zarr fixture."
     )
 )
 def test_end_to_end_needs_a_bds_beam(image_cube_ctype3, tmp_path):
