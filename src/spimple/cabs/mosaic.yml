@@ -4,87 +4,60 @@ cabs:
     command: spimple.core.mosaic.mosaic
     name: mosaic
     info:
-      Reproject and combine multiple images into a mosaic.
+      Combine the partitions of a datatree into band mean images.
     policies:
       pass_missing_as_none: true
     image: ghcr.io/landmanbester/spimple:latest
     inputs:
-      images:
+      store:
         info:
-          List of FITS images to mosaic together
-        dtype: List[str]
+          Datatree store written by spimple init
+        dtype: Directory
         required: true
         policies:
           positional: true
       output-filename:
         info:
-          Path of the output mosaic FITS file
-        dtype: File
-        required: true
-        policies:
-          positional: true
-      beam-model:
-        info:
-          Beam dataset to apply.
-          Use binterp to make a power beam matching the images.
+          Basename for the rendered FITS files
         dtype: Optional[File]
-      band:
+      eta:
         info:
-          Band to use with JimBeam.
-          L, UHF or S
-        default: L
-      ref-image:
-        info:
-          Reference image defining the output coordinate system.
-          An optimal reference is derived when this is not provided.
-        dtype: Optional[File]
-      padding:
-        info:
-          Padding factor for FFTs.
+          Tikhonov floor keeping the solve finite where no partition covers
         dtype: float
-        default: 0.1
-      method:
+        default: 0.001
+      products:
         info:
-          Reprojection method, see reproject for details.
-        choices:
-        - interp
-        - adaptive
-        - exact
-        default: interp
-      nthreads:
+          Products to combine.
+          a is apparent.
+          i is intrinsic.
+          k is mixed
+        default: aik
+      fits-outputs:
         info:
-          Number of threads to use per worker.
-        dtype: int
-        default: 1
-      nworkers:
+          Products to render as FITS.
+          Lowercase is MFS and uppercase is a cube
+        default: I
+      fits-output-folder:
         info:
-          Number of workers to use for parallel processing.
-        dtype: int
-        default: 1
+          Folder the rendered FITS are written to
+        dtype: Optional[Directory]
       out-dtype:
         info:
           Data type of output.
           Default is single precision
         default: f4
-      convolve:
+      nthreads:
         info:
-          Flag to convolve images to common resolution before projection.
-          If no psf-pars are passed in the lowest resolution will be determined automatically.
-        dtype: bool
-        default: false
-      redo-project:
+          Number of threads to use per worker
+        dtype: Optional[int]
+      nworkers:
         info:
-          Force re-projection even if output exists.
-        dtype: bool
-        default: false
-      debug:
-        info:
-          Run everything in local mode to assist with debugging.
-        dtype: bool
-        default: false
+          Number of workers to use for parallel processing
+        dtype: int
+        default: 1
     outputs:
-      mosaic-image:
-        dtype: File
+      datatree:
+        dtype: Directory
         info:
-          Mosaicked image on the common coordinate grid.
-        implicit: '{current.output-filename}'
+          Datatree store with the band mean images populated.
+        implicit: '{current.store}'
