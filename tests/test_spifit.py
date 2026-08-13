@@ -103,7 +103,7 @@ def test_refuses_an_uncombined_multi_partition_tree(two_pointing_fits, tmp_path)
     init(models, out, residual=residuals, overwrite=True)
 
     with pytest.raises(ValueError, match="spimple mosaic"):
-        spifit(store_name(out, "I"), str(tmp_path / "spi"), products="a")
+        spifit(store_name(out, "I"), str(tmp_path / "spi"), flux_scale="apparent", products="a")
 
 
 def test_accepts_a_mosaicked_tree(two_pointing_fits, true_alpha, tmp_path):

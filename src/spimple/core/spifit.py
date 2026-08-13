@@ -23,7 +23,7 @@ _SCALES = {"apparent": "a", "intrinsic": "i", "mixed": "k"}
 def spifit(
     store: str,
     output_filename: str,
-    flux_scale: str = "apparent",
+    flux_scale: str,
     products: str = "aeikId",
     threshold: float = 10.0,
     max_dr: float = 1000.0,
@@ -40,6 +40,11 @@ def spifit(
     The tree must already be homogenised to a single resolution, by spimple init
     or by pfb restore with a target resolution. Multi partition trees written by
     spimple init must be combined with spimple mosaic first.
+
+    flux_scale has no default deliberately: the three scales carry different
+    physical meanings and which products a tree even holds depends on how it was
+    made, so the caller states which one they are fitting rather than having one
+    chosen for them.
     """
     log_options(log, **locals())
 

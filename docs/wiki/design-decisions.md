@@ -139,6 +139,20 @@ degrees. `spifit` logs a warning naming the correction (`B = BEAM * n`, evaluate
 tree's own grid from `cell_rad`, `l0`, `m0`) rather than silently absorbing it. Deferred to
 a follow-up PR by decision, not oversight.
 
+### Two cab-contract issues in the DataTree commands
+
+Both are declaration problems, not defects in the science path, and are deferred to a
+follow-up PR.
+
+1. **`init`'s cab advertises `implicit="{current.output-filename}_I.dt"`**, but `core.init`
+   derives the store suffix from the FITS STOKES axis, so a `Q` or `XXYY` input produces
+   `..._Q.dt` while the cab tells Stimela to expect `..._I.dt`. Correct for the Stokes I
+   case, which is everything spimple is normally pointed at. Fixing it needs either an
+   explicit `--product` option or a declared output that carries no suffix.
+2. **`--beam-model` is declared `File` but accepts the literal `JimBeam`**, so Stimela may
+   try to validate or stage the sentinel as a path. `imconv` has always done the same, so
+   changing it either diverges from that convention for one command or changes both.
+
 ### The `.bds.zarr` beam backend is unverified against a real file
 
 `utils/beamsource._bds_beam` assumes the `l_beam`/`m_beam`/`chan`/`BEAM` names the

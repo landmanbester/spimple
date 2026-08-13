@@ -34,7 +34,9 @@ cabs:
         - apparent
         - intrinsic
         - mixed
-        default: apparent
+        required: true
+        policies:
+          positional: true
       products:
         info:
           Products to write, as a string of letters.

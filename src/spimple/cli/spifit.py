@@ -46,9 +46,10 @@ def spifit(
     flux_scale: Annotated[
         Literal["apparent", "intrinsic", "mixed"],
         typer.Option(
+            ...,
             help="Flux scale to fit. Apparent uses BIMAGE. Intrinsic uses IMAGE. Mixed uses KIMAGE",
         ),
-    ] = "apparent",
+    ],
     products: Annotated[
         str,
         typer.Option(
@@ -163,7 +164,7 @@ def spifit(
             spifit_core(
                 store,
                 output_filename,
-                flux_scale=flux_scale,
+                flux_scale,
                 products=products,
                 threshold=threshold,
                 max_dr=max_dr,

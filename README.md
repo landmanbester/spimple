@@ -26,12 +26,13 @@ spimple spifit --store out_I.dt --flux-scale mixed --output-filename spi
 spimple init --images "field*-model.fits" --residual "field*-residual.fits" \
              --output-filename out --beam-model JimBeam
 spimple mosaic --store out_I.dt            # only if the input had several pointings
-spimple spifit --store out_I.dt --output-filename spi
+spimple spifit --store out_I.dt --flux-scale apparent --output-filename spi
 ```
 
-`pfb restore` defaults to `--outputs kK`, which writes `KIMAGE` only — hence
-`--flux-scale mixed` above. Ask it for `--outputs kKaA` if you want to fit the apparent
-scale, which is `spifit`'s own default.
+`--flux-scale` is required and has no default: the three scales mean different things,
+and which products a tree even holds depends on how it was made. `pfb restore` defaults to
+`--outputs kK`, which writes `KIMAGE` only — hence `--flux-scale mixed` above. Ask it for
+`--outputs kKaA` if you want the apparent scale too.
 
 `pfb imager` mosaics in visibility space, so its band nodes arrive already populated —
 **`spimple mosaic` is never part of a pfb workflow.**
@@ -107,10 +108,12 @@ spimple spifit \
 `I` reconstructed cube, `d` data minus fitted model, `b` average power beam. Files are
 named `<output-filename>_time{t}.<product>.fits`. Unfitted pixels are `NaN`, not zero.
 
-`--flux-scale` picks which stored product to fit: `apparent` (`BIMAGE`, the default,
-fitted together with the beam), `intrinsic` (`IMAGE`, already beam-corrected) or `mixed`
-(`KIMAGE`). The tree must already be at one resolution — `spimple init` or
-`pfb restore --gausspar` does that.
+`--flux-scale` is **required** and picks which stored product to fit: `apparent`
+(`BIMAGE`, fitted together with the beam), `intrinsic` (`IMAGE`, already beam-corrected)
+or `mixed` (`KIMAGE`). All three pass the band's mean `BEAM` map to the fitter as the
+first-order response; `mixed` is an intrinsic model plus an apparent residual, so its beam
+handling is approximate by construction. The tree must already be at one resolution —
+`spimple init` or `pfb restore --gausspar` does that.
 
 ### Interpolate a primary beam
 
@@ -134,6 +137,7 @@ comma-separated string and accept glob patterns.
 - `spifit` and `mosaic` take `--store`, a datatree, instead of FITS images. Their
   FITS-specific options are gone; convolution, beams, frequencies and weights now come
   from the tree.
+- `spifit --flux-scale` is required, with no default.
 - `imconv` is deprecated and warns on use. It will be removed in a following release.
 - `Gaussian2D` was producing kernels 8.51 % too wide, so every convolution now homogenises
   to the resolution actually requested. Output changes accordingly.
