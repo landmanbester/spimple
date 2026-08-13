@@ -4,7 +4,7 @@ title: FITS and beam conventions
 description: The header conventions spimple's I/O assumes, and the beam-model layouts it expects.
 tags: [fits, wcs, beams, conventions]
 timestamp: 2026-08-13
-last_verified_commit: 49ecf34
+last_verified_commit: b7bfbc4
 ---
 
 # FITS and beam conventions
@@ -120,3 +120,28 @@ counts per time, so the beam is averaged over the observation rather than evalua
 single instant. `--sparsify-time` subsamples the time axis to keep that affordable, and
 `--field` picks the field whose phase centre is used. Antenna positions are checked for
 consistency across multiple measurement sets.
+
+
+## The DataTree path uses different I/O
+
+Everything above describes the FITS-to-FITS commands (`imconv`, `binterp`). The DataTree
+path — `init`, `mosaic`, `spifit` — differs deliberately:
+
+- **Arrays are (Y, X).** `load_fits` keeps its legacy `(1, 0, 3, 2)` transpose into (X, Y)
+  for the FITS-to-FITS commands. The tree path instead uses **`load_cube`**, which returns
+  `(nband, ncorr, ny, nx)` with the FITS raster untouched, and **`save_fits(yx_order=True)`**
+  to write it back.
+- **`load_cube` resolves the frequency-axis fork in one place.** It detects `CTYPE3` versus
+  `CTYPE4` itself and moves frequency to axis 0. Previously `imconv`, `spifit` and
+  `mosaic_info` each re-implemented that detection, and inconsistently — the trap this page
+  and `CLAUDE.md` both warned about. Pinned by asserting `load_cube` returns identical
+  arrays for the `image_cube` and `image_cube_ctype3` fixtures.
+- **Beams come from `utils/beamsource.py`,** which supports `JimBeam`, a FITS cube and a
+  meerkat-beams `.bds.zarr`, each evaluated on the partition's own grid around its own
+  phase centre and then reprojected. The FITS backend goes through `reproject_interp`, so
+  the pixel-exact coordinate match `imconv`/`spifit` demand is no longer required — a
+  `binterp` output cube is a valid `init --beam-model`.
+- **The MS-derived DDE path (`utils/beam.py`) is now reachable only from `binterp`.** It is
+  deliberately not an `init` backend, and its documented defects are unchanged.
+
+See [datatree-contract.md](datatree-contract.md) for the store layout itself.

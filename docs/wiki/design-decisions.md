@@ -4,7 +4,7 @@ title: Design decisions and known defects
 description: The decision ledger for the hip-cargo port, plus the defects diagnosed but not fixed.
 tags: [architecture, decisions, known-issues]
 timestamp: 2026-08-13
-last_verified_commit: f3c2726
+last_verified_commit: b7bfbc4
 ---
 
 # Design decisions and known defects
@@ -40,6 +40,56 @@ an org package inherits its repository's access.)
 | D8 | `set_wcs` uses `astropy.time.Time`, not `casacore.quanta`. | Removes the only direct `python-casacore` import (it still arrives transitively via `codex-africanus[complete]`). Pinned by four regression vectors in `tests/test_fits.py` captured from the casacore implementation; they agree to better than 2.4e-7 s, far below the whole-second truncation applied. |
 | D9 | `RAY_ENABLE_UV_RUN_RUNTIME_ENV=0` is defaulted in `src/spimple/__init__.py`. | Ray ≥ 2.43 auto-injects a `runtime_env` when it detects `uv run` and hands itself the project directory as a URI. `ray.init` then dies with "… is not a valid URI", taking `spimple mosaic` out entirely. |
 | D10 | Two targeted `noqa`s are load-bearing: `N816` on `iFs`, `E402` on the four deferred imports in `cli/__init__.py`. | Preferred over widening the project-wide ignore list. Both rules only became live when the ruff config was replaced, which is why they were added in that commit and not earlier — under the old config they would have been unused suppressions tripping `RUF100`. |
+| D11 | No pfb-imaging dependency; the tree layout is a documented cross-repo contract instead. | `pfb_imaging.utils.misc` imports jax, numba, numexpr, daskms and skimage at module scope, so importing `convolve2gaussres` from it would drag in `pfb-imaging[full]`. spimple ports the handful of helpers it needs and owns the schema in `utils/datatree.py`. |
+| D12 | Partitions are derived from the data's own identity — phase centre plus grid — not from user labels. | A recipe should not have to spell out a grouping that the headers already state. Rounded to a thousandth of a pixel so header round-tripping cannot split a partition. |
+| D13 | `init` homogenises resolution; `mosaic` combines. `spifit` and `mosaic` both assume an already-homogenised tree. | Convolution lives in one place. For a pfb-origin tree the equivalent upstream step is `pfb restore --gausspar`, and `spifit` refuses with a message naming it. |
+| D14 | `init` writes the restore-named products `IMAGE`/`BIMAGE`/`KIMAGE` plus `PSFPARSF`, and never persists a native-resolution `MODEL`/`RESIDUAL`. | Identical variable names to `pfb restore` means `spifit` needs no origin-specific branching. The input FITS is already the archive of the native-resolution data, so copying it into the store buys nothing. |
+| D15 | The band beam after mosaicking is `sum B^2 / sum B`, the beam-weighted mean — deliberately not pfb's WSUM-weighted mean. | It is the reduction consistent with the `B^2`-weighted solve that produced `IMAGE`, so `BEAM * IMAGE` is exactly the beam-weighted mean apparent image. pfb's D28 warns specifically against reducing a quantity and its weighting by different rules at the same level. Reduces to `B` where partitions agree and to `B_p` where only `p` covers. |
+| D16 | The mosaic normal equations are solved directly, not by conjugate gradient. | `(sum_p mask_p B_p^2 + eta) S = sum_p B_p A_p` is diagonal — purely elementwise — so the exact solution is one division and CG only iterates towards it. `conjugate_gradient` is retained for a future non-diagonal formulation and pinned against the direct solve by a test. `--cg-max-iter`/`--cg-tol` were dropped; `--eta` stays. |
+
+
+## Bugs found and fixed during the DataTree refactor
+
+- **`Gaussian2D` produced kernels 8.51 % too wide.** The exponent was
+  `exp(-fwhm_conv * R)` where the FWHM parametrisation requires `exp(-4 ln2 * R)`, i.e. a
+  coefficient of `0.5 * fwhm_conv**2`. Requesting a 10-pixel FWHM yielded 10.851. Verified
+  against pfb's `gaussian2d`, which matches to 1.7e-16 once the width is corrected, so the
+  position-angle parametrisations — which differ in form — are algebraically identical.
+  Every `imconv`/`spifit` convolution before this had homogenised to a resolution 8.51 %
+  coarser than requested. Pinned by `tests/test_convolution.py`.
+- **`set_wcs` read the reference frequency one channel too high.** It indexed the frequency
+  array with the *one-based* `CRPIX3`, so `CRVAL3` named the wrong channel, and a
+  two-channel cube raised `IndexError` — two bands being `spifit`'s documented minimum. It
+  survived because the only caller passing an array of frequencies was on the end-to-end
+  mosaic path the tests skipped. Pinned by `tests/test_fits.py`.
+- **`convolve2gaussres` tested `gausspari in [None, ()]`.** That is an elementwise
+  comparison for a numpy array and raises "truth value of an array is ambiguous". Every
+  legacy caller passed tuples of tuples, so it only surfaced once `restore_products` began
+  passing arrays.
+- **`ref_wcs.array_shape` was unpacked in both orders** — `(nyo, nxo)` in `core/mosaic.py`
+  and `(nxo, nyo)` in `utils/mosaic.py`, invisible only for square outputs. Both call sites
+  are gone with the rewrite.
+
+## A regression introduced and reverted, worth remembering
+
+Fixing the `Gaussian2D` width, its **support** was also changed from `nsigma * FWHM` to
+`nsigma * sigma`, to match both its docstring and pfb's `gaussian2d`. That broke the
+*deconvolution* path badly enough to displace sources.
+
+`convolve2gaussres` divides by the kernel's transform when `gausspari` is given. A
+Gaussian's transform decays to about 1e-14 by Nyquist; truncating the kernel at 5 sigma
+leaves a step of `exp(-12.5) = 3.7e-6` of peak whose spectral ripple is many orders of
+magnitude larger than that floor. The division amplifies it into ringing that moves the
+peak to *twice* its offset from the image centre. At 5 FWHM (11.8 sigma) the step is about
+4e-31 and the division is clean.
+
+Caught only by running `spimple init` end to end — a source at `x=20` rendered at `x=24` —
+because no unit test covered `gausspari != gaussparf`. That gap is now pinned by
+`test_convolve2gaussres_preserves_position_when_deconvolving`. **The same latent issue
+exists in pfb-imaging**, whose `gaussian2d` uses `nsigma * sigma_maj` while
+`restore_products` performs the identical division: reported as
+[ratt-ru/pfb-imaging#312](https://github.com/ratt-ru/pfb-imaging/issues/312), with the
+displacement measured at every image size from 32 to 1024 pixels.
 
 ## Bugs found and fixed during the port
 
@@ -78,6 +128,24 @@ All pre-existing; none introduced by the port.
   the bug survived. Found by Copilot's review of #49.
 
 ## Known defects, diagnosed but not fixed
+
+### `BEAM` from pfb-imaging is `B/n`, not the primary beam
+
+pfb's D22 folds the wgridder's geometric Jacobian into the stored beam, so a pfb tree's
+`BEAM` is the effective image-plane response `B/n` with `n = sqrt(1 - l^2 - m^2)`.
+Partitions carry `beam_includes_n: True` to say so. `spimple spifit` therefore applies
+`B/n` where it means `B`: about 0.2 % at a 5-degree field-of-view edge, 1.5 % at 10
+degrees. `spifit` logs a warning naming the correction (`B = BEAM * n`, evaluated on the
+tree's own grid from `cell_rad`, `l0`, `m0`) rather than silently absorbing it. Deferred to
+a follow-up PR by decision, not oversight.
+
+### The `.bds.zarr` beam backend is unverified against a real file
+
+`utils/beamsource._bds_beam` assumes the `l_beam`/`m_beam`/`chan`/`BEAM` names the
+pre-refactor `utils/mosaic.project` used, with a fallback to the `X`/`Y` spelling pfb's
+orientation wiki documents — both spellings have been in use. No real meerkat-beams dataset
+was available, and the test fixture only pins the reader against our own writer. Run it
+against a real `.bds.zarr` before advertising the backend.
 
 These are out of the port's scope. The diagnosis is recorded so nobody has to redo it.
 
