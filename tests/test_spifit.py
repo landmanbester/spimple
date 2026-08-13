@@ -130,3 +130,54 @@ def test_warns_when_the_beam_includes_the_n_term(pfb_tree, tmp_path, caplog):
         spifit(pfb_tree, str(tmp_path / "spi"), flux_scale="intrinsic", products="a")
 
     assert any("beam_includes_n" in record.message or "B/n" in record.message for record in caplog.records)
+
+
+def test_skips_fully_flagged_bands(pfb_tree, true_alpha, tmp_path):
+    """pfb leaves WSUM == 0 band nodes in the tree; its restore skips them.
+
+    Such a node may lack the restored product entirely, so keeping it would
+    either abort the fit or give a dead band a weight.
+    """
+    import shutil
+
+    from spimple.utils.datatree import write_node
+
+    flagged = str(tmp_path / "flagged_I.dt")
+    shutil.copytree(pfb_tree, flagged)
+    dt = open_store(flagged)
+    node = band_nodes(dt)[-1]
+    ds = dt[node].ds
+    write_node(
+        flagged,
+        node,
+        {
+            "WSUM": (("corr",), np.zeros(1, dtype=np.float32)),
+            # a dead band that restore never wrote a product for
+            "IMAGE": (("corr", "y", "x"), np.full_like(ds.IMAGE.values, np.nan)),
+        },
+        {},
+        {"corr": ["I"]},
+    )
+
+    out = str(tmp_path / "spi")
+    spifit(flagged, out, flux_scale="intrinsic", products="aI")
+
+    cube = fits.getdata(f"{out}_time0.Irec_cube.fits")
+    assert cube.shape[1] == 3, "the fully flagged band should have been dropped"
+    alpha = fits.getdata(f"{out}_time0.alpha.fits").squeeze()
+    fitted = alpha[np.isfinite(alpha)]
+    assert np.median(fitted) == pytest.approx(true_alpha, abs=0.05)
+
+
+def test_missing_product_error_names_what_is_available(pfb_tree, tmp_path):
+    """pfb restore defaults to outputs='kK', so only KIMAGE exists."""
+    import shutil
+
+    konly = str(tmp_path / "konly_I.dt")
+    shutil.copytree(pfb_tree, konly)
+    for node in band_nodes(open_store(konly)):
+        for var in ("BIMAGE", "IMAGE"):
+            shutil.rmtree(f"{konly}/{node}/{var}", ignore_errors=True)
+
+    with pytest.raises(ValueError, match="KIMAGE"):
+        spifit(konly, str(tmp_path / "spi"), flux_scale="apparent", products="a")

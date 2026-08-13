@@ -19,8 +19,8 @@ consumed directly. FITS input from any other imager is ingested into the same la
 
 ```bash
 # images from pfb-imaging: no ingest step at all
-pfb restore --output-filename out --gausspar 8.0 6.4 0.0
-spimple spifit --store out_I.dt --output-filename spi
+pfb restore --output-filename out --gausspar 0.00222 0.00178 0.0  # degrees: 8.0 x 6.4 arcsec
+spimple spifit --store out_I.dt --flux-scale mixed --output-filename spi
 
 # FITS from any other imager
 spimple init --images "field*-model.fits" --residual "field*-residual.fits" \
@@ -28,6 +28,10 @@ spimple init --images "field*-model.fits" --residual "field*-residual.fits" \
 spimple mosaic --store out_I.dt            # only if the input had several pointings
 spimple spifit --store out_I.dt --output-filename spi
 ```
+
+`pfb restore` defaults to `--outputs kK`, which writes `KIMAGE` only — hence
+`--flux-scale mixed` above. Ask it for `--outputs kKaA` if you want to fit the apparent
+scale, which is `spifit`'s own default.
 
 `pfb imager` mosaics in visibility space, so its band nodes arrive already populated —
 **`spimple mosaic` is never part of a pfb workflow.**
@@ -70,12 +74,13 @@ spimple init \
     --residual "field*-residual.fits" \
     --output-filename out/field \
     --beam-model JimBeam \
-    --psf-pars 8.0 6.4 0.0
+    --psf-pars 0.00222 0.00178 0.0
 ```
 
 Writes `out/field_I.dt`, the product suffix coming from the input STOKES axis. Files
 sharing a phase centre and grid become one partition; each distinct frequency becomes a
-band. `--psf-pars` is `emaj emin pa` in degrees; omit it to take the lowest resolution of
+band. `--psf-pars` is `emaj emin pa` in **degrees** (the example above is 8.0 x 6.4
+arcsec); omit it to take the lowest resolution of
 the inputs. `--beam-model` accepts `JimBeam`, a FITS beam cube, or a meerkat-beams
 `.bds.zarr` store.
 

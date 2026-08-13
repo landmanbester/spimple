@@ -66,13 +66,37 @@ def spifit(
         if dropped:
             log.info("Dropping bands %s", sorted(dropped))
 
+        # A fully flagged band carries WSUM == 0. pfb leaves such nodes in the
+        # tree and its restore skips them, so they may not even carry the
+        # product variable; keeping one would either abort the fit below or
+        # give a dead band a weight.
+        dead = [n for n in keep if "WSUM" in dt[n].ds and not float(np.sum(dt[n].ds.WSUM.values)) > 0]
+        if dead:
+            log.info(
+                "Skipping fully flagged bands %s (WSUM == 0)",
+                [int(dt[n].ds.attrs["bandid"]) for n in dead],
+            )
+            keep = [n for n in keep if n not in set(dead)]
+        if not keep:
+            raise ValueError(f"No bands left at timeid {tid} after dropping deselected and fully flagged bands")
+
         for node in keep:
             if column not in dt[node].ds:
-                hint = (
-                    "run spimple mosaic to combine its partitions"
-                    if partition_nodes(dt, node)
-                    else "the tree carries no such product"
-                )
+                available = sorted(v for v in PRODUCT_VARS.values() if v in dt[node].ds)
+                if partition_nodes(dt, node) and not available:
+                    hint = "run spimple mosaic to combine its partitions"
+                elif available:
+                    scales = ", ".join(
+                        f"{name} for --flux-scale {scale}"
+                        for scale, name in (("apparent", "BIMAGE"), ("intrinsic", "IMAGE"), ("mixed", "KIMAGE"))
+                        if name in available
+                    )
+                    hint = (
+                        f"the tree carries {scales}. Note pfb restore defaults to --outputs kK, "
+                        "which writes KIMAGE only"
+                    )
+                else:
+                    hint = "the tree carries no restored product at all"
                 raise ValueError(f"{node} has no {column}; {hint}")
         datasets = [dt[n].ds for n in keep]
         if len(datasets) < 2:

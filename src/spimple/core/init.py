@@ -84,13 +84,20 @@ def group_partitions(paths: list[str]) -> list[tuple[PartitionKey, list[str]]]:
 
 
 def frequencies_of(paths: list[str]) -> np.ndarray:
-    """Return the sorted distinct channel frequencies across a partition's files."""
+    """Return a partition's channel frequencies in traversal order.
+
+    Deliberately NOT sorted. The returned index of each frequency is what
+    ``assign_bands`` records in its mapping and what ``_locate_band`` then uses
+    to find the plane, so it must be the order those two walk: files in the
+    given order, planes in native cube-axis order. Sorting here silently
+    mislabels every plane of a descending frequency axis.
+    """
     freqs: list[float] = []
     for path in paths:
         hdr = fits.getheader(path)
         values, _ = data_from_header(hdr, axis=freq_axis_of(hdr))
         freqs.extend(np.atleast_1d(values).tolist())
-    return np.array(sorted(freqs), dtype=np.float64)
+    return np.array(freqs, dtype=np.float64)
 
 
 def assign_bands(
@@ -179,18 +186,25 @@ def store_name(output_filename: str, product: str) -> str:
     return f"{output_filename}_{product.upper()}.dt"
 
 
-def resolve_target(psfparsn, psf_pars, circ_psf: bool, dilate: float, cell_deg: float) -> np.ndarray:
+def resolve_target(psfparsn, psf_pars, circ_psf: bool, dilate: float, cell_deg: float = 1.0) -> np.ndarray:
     """Resolve the common target resolution for every band and partition.
 
+    Angular units are canonical: partitions may sit on different pixel scales,
+    so a resolution in pixels is only meaningful once paired with a grid. The
+    caller divides by whichever cell size it is about to work on.
+
     Args:
-        psfparsn: (nband, ncorr, 3) native resolutions in pixels and radians.
+        psfparsn: (nband, ncorr, 3) native resolutions, axes in the same units
+            as cell_deg implies and the angle in radians.
         psf_pars: Requested (emaj, emin, pa) in degrees, or None to derive it.
         circ_psf: Force a circular beam.
         dilate: Safety factor applied when the target is derived.
-        cell_deg: Cell size in degrees.
+        cell_deg: Cell size that psfparsn's axes are expressed in, so 1.0 when
+            they are already in degrees.
 
     Returns:
-        (ncorr, 3) target resolution in pixels, pixels, radians.
+        (ncorr, 3) target resolution in the same axis units as psfparsn, with
+        the angle in radians.
 
     Raises:
         ValueError: If the requested target is finer than any input resolution.
@@ -223,15 +237,65 @@ def _time_out(hdr) -> float:
     return float(Time(hdr["DATE-OBS"]).unix)
 
 
-def _read_band(paths: list[str], bandid: int, chan: int) -> np.ndarray:
-    """Return one band's (ncorr, ny, nx) plane from a partition's files."""
+def _locate_band(paths: list[str], chan: int) -> tuple[str, int]:
+    """Map a partition-wide channel index onto (file, plane within that file).
+
+    ``chan`` counts in the same traversal order ``frequencies_of`` uses.
+
+    Args:
+        paths: The partition's file paths, in order.
+        chan: Channel index within the partition.
+
+    Returns:
+        The owning path and the plane's index inside that file.
+
+    Raises:
+        ValueError: If the index runs past the end of the partition.
+    """
     remaining = chan
     for path in paths:
-        cube, _ = load_cube(path, dtype=np.float64)
-        if remaining < cube.shape[0]:
-            return cube[remaining]
-        remaining -= cube.shape[0]
-    raise ValueError(f"band {bandid} channel {chan} not found in {paths}")
+        hdr = fits.getheader(path)
+        nplane = int(hdr.get(f"NAXIS{freq_axis_of(hdr)}", 1))
+        if remaining < nplane:
+            return path, remaining
+        remaining -= nplane
+    raise ValueError(f"channel {chan} not found in {paths}")
+
+
+def _read_band(paths: list[str], bandid: int, chan: int) -> np.ndarray:
+    """Return one band's (ncorr, ny, nx) plane from a partition's files."""
+    path, plane = _locate_band(paths, chan)
+    cube, _ = load_cube(path, dtype=np.float64)
+    return cube[plane]
+
+
+def psfparsn_deg(paths: list[str], mapping: dict[int, int], ncorr: int) -> dict[int, np.ndarray]:
+    """Read each band's native resolution from the file that supplies it.
+
+    Reading the whole partition's beams from its first header is wrong for the
+    common split-per-channel layout, where every file carries a single scalar
+    BMAJ describing only its own plane, and for any partition whose files differ in
+    resolution.
+
+    Args:
+        paths: The partition's file paths, in order.
+        mapping: bandid to channel index, for this partition.
+        ncorr: Number of correlations.
+
+    Returns:
+        bandid to an (ncorr, 3) array of (emaj, emin, pa) in degrees, degrees
+        and radians.
+    """
+    out: dict[int, np.ndarray] = {}
+    for bandid, chan in mapping.items():
+        path, plane = _locate_band(paths, chan)
+        hdr = fits.getheader(path)
+        nplane = int(hdr.get(f"NAXIS{freq_axis_of(hdr)}", 1))
+        # cell_deg=1.0 keeps the axes in degrees; the caller converts to the
+        # pixel scale of whichever grid it is about to work on
+        pars = psfpars_from_header(hdr, nplane, ncorr, cell_deg=1.0)
+        out[bandid] = pars[plane]
+    return out
 
 
 def init(
@@ -285,25 +349,34 @@ def init(
     dec = np.deg2rad(float(target_wcs.wcs.crval[1]))
     log.info("Union grid is %d by %d pixels over %d partitions", ny, nx, len(groups))
 
-    residual_groups = group_partitions(residual) if residual else None
-    if residual_groups is not None and len(residual_groups) != len(groups):
-        raise ValueError(
-            f"{len(groups)} image partitions but {len(residual_groups)} residual partitions; "
-            "they must describe the same pointings"
-        )
+    # match residuals to images by partition identity, never by list position:
+    # two equal-sized sets with a swapped pointing would otherwise pair silently
+    residual_by_key = None
+    if residual:
+        residual_by_key = dict(group_partitions(residual))
+        missing = [key for key, _ in groups if key not in residual_by_key]
+        if missing:
+            raise ValueError(
+                f"{len(missing)} image partition(s) have no residual at the same phase centre and grid; "
+                "every --images pointing needs a matching --residual pointing"
+            )
 
     freqs_per_partition = [frequencies_of(paths) for _, paths in groups]
     nominal, mapping = assign_bands(freqs_per_partition, freq_tol)
     nband = nominal.size
 
-    psfparsn = [psfpars_from_header(hdr, nband, ncorr, cell_deg) for hdr in headers]
-    target = resolve_target(np.concatenate(psfparsn, axis=0), psf_pars, circ_psf, dilate, cell_deg)
+    # native resolutions in degrees, read from the file that supplies each band
+    psfparsn = [psfparsn_deg(paths, mapping[pid], ncorr) for pid, (_, paths) in enumerate(groups)]
+    all_native = np.stack([pars for per_part in psfparsn for pars in per_part.values()])
+    target_deg = resolve_target(all_native, psf_pars, circ_psf, dilate)
     log.info(
         "Target resolution %.3e deg by %.3e deg at %.3e deg",
-        target[0, 0] * cell_deg,
-        target[0, 1] * cell_deg,
-        np.rad2deg(target[0, 2]),
+        target_deg[0, 0],
+        target_deg[0, 1],
+        np.rad2deg(target_deg[0, 2]),
     )
+    # stored on the union grid, so PSFPARSF is in union-grid pixels
+    target = target_deg / np.array([cell_deg, cell_deg, 1.0])
 
     url = store_name(output_filename, product)
     Path(url).parent.mkdir(parents=True, exist_ok=True)
@@ -326,9 +399,13 @@ def init(
 
     for pid, (_, paths) in enumerate(groups):
         hdr = headers[pid]
+        # the convolution happens on this partition's native grid, so the
+        # resolutions must be in ITS pixels, not the union grid's
+        part_cell_deg = abs(float(hdr["CDELT1"]))
+        target_pix = target_deg / np.array([part_cell_deg, part_cell_deg, 1.0])
         part_wcs = WCS(hdr).celestial
         part_shape = (int(hdr["NAXIS2"]), int(hdr["NAXIS1"]))
-        res_paths = residual_groups[pid][1] if residual_groups else None
+        res_paths = residual_by_key[groups[pid][0]] if residual_by_key else None
         rhdr = fits.getheader(res_paths[0]) if res_paths else hdr
         band_ids = sorted(mapping[pid])
         band_freqs = np.array([freqs_per_partition[pid][mapping[pid][b]] for b in band_ids], dtype=float)
@@ -352,8 +429,8 @@ def init(
                 model,
                 resid,
                 beam,
-                target,
-                gausspari=psfparsn[pid][bandid],
+                target_pix,
+                gausspari=psfparsn[pid][bandid] / np.array([part_cell_deg, part_cell_deg, 1.0]),
                 products=letters,
                 pb_min=pb_min,
                 nthreads=nthreads,
@@ -391,7 +468,7 @@ def init(
                     "ra0": ra0,
                     "dec0": dec0,
                     "freq_out": float(nominal[bandid]),
-                    "psfparsn": psfparsn[pid][bandid].tolist(),
+                    "psfparsn": (psfparsn[pid][bandid] / np.array([cell_deg, cell_deg, 1.0])).tolist(),
                     "beam_includes_n": False,
                 },
                 coords,

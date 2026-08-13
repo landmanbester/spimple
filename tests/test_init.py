@@ -210,3 +210,97 @@ def test_init_uses_each_partition_s_own_pointing_for_the_beam(two_pointing_fits,
         peaks.append(np.unravel_index(np.argmax(beam), beam.shape))
 
     assert peaks[0] != peaks[1], "both beams peak at the same pixel; the pointing was ignored"
+
+
+def _single_band_fits(path, freq, bmaj_deg, npix=32, ra=30.0):
+    """One channel, one file, with its own scalar beam cards."""
+    hdr = fits.Header()
+    hdr["CTYPE1"] = "RA---SIN"
+    hdr["CRVAL1"] = ra
+    hdr["CRPIX1"] = npix // 2 + 1
+    hdr["CDELT1"] = -CELL_DEG
+    hdr["CUNIT1"] = "deg"
+    hdr["CTYPE2"] = "DEC--SIN"
+    hdr["CRVAL2"] = -30.0
+    hdr["CRPIX2"] = npix // 2 + 1
+    hdr["CDELT2"] = CELL_DEG
+    hdr["CUNIT2"] = "deg"
+    hdr["CTYPE4"] = "FREQ"
+    hdr["CRVAL4"] = float(freq)
+    hdr["CRPIX4"] = 1
+    hdr["CDELT4"] = 1.0e8
+    hdr["CTYPE3"] = "STOKES"
+    hdr["CRVAL3"] = 1.0
+    hdr["CRPIX3"] = 1
+    hdr["CDELT3"] = 1.0
+    hdr["BMAJ"] = float(bmaj_deg)
+    hdr["BMIN"] = float(bmaj_deg)
+    hdr["BPA"] = 0.0
+    data = np.zeros((1, 1, npix, npix), dtype=np.float32)
+    data[0, 0, 5, 7] = 1.0
+    fits.writeto(path, data, hdr, overwrite=True)
+    return str(path)
+
+
+def test_init_labels_planes_correctly_on_a_descending_frequency_axis(tmp_path):
+    """A cube whose CDELT4 is negative must not have its spectrum reversed."""
+    npix = 32
+    freqs = [1.3e9, 1.2e9, 1.1e9, 1.0e9]
+    hdr = fits.Header()
+    hdr["CTYPE1"] = "RA---SIN"
+    hdr["CRVAL1"] = 30.0
+    hdr["CRPIX1"] = npix // 2 + 1
+    hdr["CDELT1"] = -CELL_DEG
+    hdr["CUNIT1"] = "deg"
+    hdr["CTYPE2"] = "DEC--SIN"
+    hdr["CRVAL2"] = -30.0
+    hdr["CRPIX2"] = npix // 2 + 1
+    hdr["CDELT2"] = CELL_DEG
+    hdr["CUNIT2"] = "deg"
+    hdr["CTYPE4"] = "FREQ"
+    hdr["CRVAL4"] = freqs[0]
+    hdr["CRPIX4"] = 1
+    hdr["CDELT4"] = freqs[1] - freqs[0]  # negative
+    hdr["CTYPE3"] = "STOKES"
+    hdr["CRVAL3"] = 1.0
+    hdr["CRPIX3"] = 1
+    hdr["CDELT3"] = 1.0
+    hdr["BMAJ"] = 6.0 * CELL_DEG
+    hdr["BMIN"] = 6.0 * CELL_DEG
+    hdr["BPA"] = 0.0
+    data = np.zeros((4, 1, npix, npix), dtype=np.float32)
+    for i in range(4):
+        data[i, 0, 5, 7] = float(i + 1)  # plane i, at freqs[i], carries value i+1
+    path = str(tmp_path / "desc.fits")
+    fits.writeto(path, data, hdr, overwrite=True)
+
+    out = str(tmp_path / "out")
+    init([path], out, overwrite=True)
+
+    dt = open_store(store_name(out, "I"))
+    for node in band_nodes(dt):
+        ds = dt[node].ds
+        freq = float(ds.attrs["freq_out"])
+        expected = freqs.index(pytest.approx(freq)) + 1 if False else None
+        # the plane written at this frequency carried value (index in freqs) + 1
+        idx = min(range(4), key=lambda i: abs(freqs[i] - freq))
+        expected = idx + 1
+        assert ds.IMAGE.values[0, 5, 7] == pytest.approx(expected, rel=0.1), (
+            f"{node} at {freq:.3e} Hz carries the wrong plane"
+        )
+
+
+def test_init_reads_the_beam_from_each_source_file(tmp_path):
+    """Split single-channel files each carry their own scalar BMAJ."""
+    beams = [6.0, 5.0, 4.0]
+    files = [
+        _single_band_fits(tmp_path / f"s-{i:04d}.fits", 1.0e9 + i * 1.0e8, b * CELL_DEG) for i, b in enumerate(beams)
+    ]
+
+    out = str(tmp_path / "out")
+    init(files, out, overwrite=True)
+
+    dt = open_store(store_name(out, "I"))
+    recorded = [np.asarray(dt[f"{n}/part0000"].ds.attrs["psfparsn"])[0][0] for n in band_nodes(dt)]
+
+    np.testing.assert_allclose(recorded, beams, rtol=1e-6)
