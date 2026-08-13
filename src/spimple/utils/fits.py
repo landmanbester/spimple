@@ -201,7 +201,9 @@ def set_wcs(
             header["CASAMBM"] = casambm  # we need this to pick up the beams table
 
         if gausspar is not None or gausspars is not None:
-            header = add_beampars(header, gausspar, gausspars=gausspars)
+            # gausspar/gausspars arrive in pixels (the PSFPARSF convention) with
+            # the angle in radians; unit2deg converts the axes to degrees.
+            header = add_beampars(header, gausspar, GaussPars=gausspars, unit2deg=cell_x)
 
         return header
     return w
