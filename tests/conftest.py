@@ -240,3 +240,49 @@ def pfb_tree(tmp_path_factory):
             {"corr": ["I"]},
         )
     return url
+
+
+def _beam_fits(path, freqs, sigma_l_deg, sigma_m_deg, npix=48, cell_deg=None):
+    """A Gaussian power beam on its own coarse grid, centred on the pointing."""
+    cell_deg = cell_deg if cell_deg is not None else 20.0 / 3600.0
+    hdr = fits.Header()
+    hdr["CTYPE1"] = "RA---SIN"
+    hdr["CRVAL1"] = 30.0
+    hdr["CRPIX1"] = npix // 2 + 1
+    hdr["CDELT1"] = -cell_deg
+    hdr["CUNIT1"] = "deg"
+    hdr["CTYPE2"] = "DEC--SIN"
+    hdr["CRVAL2"] = -30.0
+    hdr["CRPIX2"] = npix // 2 + 1
+    hdr["CDELT2"] = cell_deg
+    hdr["CUNIT2"] = "deg"
+    hdr["CTYPE4"] = "FREQ"
+    hdr["CRVAL4"] = float(freqs[0])
+    hdr["CRPIX4"] = 1
+    hdr["CDELT4"] = float(freqs[1] - freqs[0]) if len(freqs) > 1 else 1.0e8
+    hdr["CUNIT4"] = "Hz"
+    hdr["CTYPE3"] = "STOKES"
+    hdr["CRVAL3"] = 1.0
+    hdr["CRPIX3"] = 1
+    hdr["CDELT3"] = 1.0
+
+    v = (np.arange(npix) - npix // 2) * cell_deg
+    ll, mm = np.meshgrid(-v, v)  # (ny, nx); l descends with x, m ascends with y
+    plane = np.exp(-0.5 * (ll**2 / sigma_l_deg**2 + mm**2 / sigma_m_deg**2))
+    data = np.repeat(plane[None, None], len(freqs), axis=0).astype(np.float32)
+    fits.writeto(path, data, hdr, overwrite=True)
+    return str(path)
+
+
+@pytest.fixture(scope="session")
+def fits_beam_cube(tmp_path_factory):
+    """A circular Gaussian power beam on a coarser grid than the image."""
+    path = tmp_path_factory.mktemp("beam") / "beam.fits"
+    return _beam_fits(path, [1.0e9, 1.1e9], 0.05, 0.05)
+
+
+@pytest.fixture(scope="session")
+def fits_beam_cube_elliptical(tmp_path_factory):
+    """Elongated along m, so a transposed read is detectable."""
+    path = tmp_path_factory.mktemp("beam") / "beam_ell.fits"
+    return _beam_fits(path, [1.0e9], 0.02, 0.06)
