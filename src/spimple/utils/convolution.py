@@ -32,9 +32,15 @@ def Gaussian2D(xin, yin, GaussPar=(1.0, 1.0, 0.0), normalise=True, nsigma=5):
     R = np.array([[np.sin(PA), -np.cos(PA)], [np.cos(PA), np.sin(PA)]])
     A = np.dot(np.dot(R.T, A), R)
     sOut = xin.shape
-    # the docstring's contract: nsigma standard deviations of the major axis
-    sigma_maj = Smaj / (2 * np.sqrt(2 * np.log(2)))
-    extent = (nsigma * sigma_maj) ** 2
+    # Support is nsigma MAJOR-AXIS FWHMs, not nsigma standard deviations, and it
+    # has to stay this wide. convolve2gaussres divides by this kernel's transform
+    # when gausspari is given, and a Gaussian's transform decays to ~1e-14 by
+    # Nyquist. Truncating at 5 sigma leaves a step of 3.7e-6 of peak whose
+    # spectral ripple then dominates that 1e-14 -- the division amplifies it into
+    # ringing that displaces the peak. At 5 FWHM (11.8 sigma) the step is ~4e-31
+    # and the division is clean. Pinned by
+    # test_convolve2gaussres_preserves_position_when_deconvolving.
+    extent = (nsigma * Smaj) ** 2
     xflat = xin.squeeze()
     yflat = yin.squeeze()
     idx, idy = np.where(xflat**2 + yflat**2 <= extent)

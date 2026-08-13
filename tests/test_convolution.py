@@ -60,20 +60,23 @@ def test_gaussian2d_has_the_requested_fwhm():
     assert kern[c + 5, c] == pytest.approx(0.5, rel=1e-12)
 
 
-def test_gaussian2d_support_is_nsigma_standard_deviations():
-    """The kernel is truncated at nsigma sigma, not nsigma FWHM."""
-    n = 257
+def test_gaussian2d_support_is_nsigma_major_axis_fwhms():
+    """Support is nsigma FWHMs, wide enough that deconvolution stays clean.
+
+    Truncating nearer the core leaves a spectral ripple that swamps the
+    kernel's own transform when convolve2gaussres divides by it; see the
+    comment in Gaussian2D and the deconvolution test below.
+    """
+    n = 513
     c = n // 2
     v = np.arange(n) - c
     xx, yy = np.meshgrid(v, v, indexing="ij")
 
-    kern = Gaussian2D(xx, yy, (20.0, 20.0, 0.0), normalise=False, nsigma=5)
+    emaj = 20.0
+    kern = Gaussian2D(xx, yy, (emaj, emaj, 0.0), normalise=False, nsigma=5)
 
-    sigma = 20.0 / (2 * np.sqrt(2 * np.log(2)))
-    inside = int(4.0 * sigma)
-    outside = int(6.0 * sigma)
-    assert kern[c + inside, c] > 0.0
-    assert kern[c + outside, c] == 0.0
+    assert kern[c + int(4.5 * emaj), c] > 0.0
+    assert kern[c + int(5.5 * emaj), c] == 0.0
 
 
 def _grids(nx, ny):
@@ -136,3 +139,36 @@ def test_convolve2gaussres_accepts_a_numpy_gausspari():
 
     assert np.isfinite(out).all()
     assert out[0, nx // 2, ny // 2] > 0.0
+
+
+@pmp("npix", [32, 128])
+def test_convolve2gaussres_preserves_position_when_deconvolving(npix):
+    """Deconvolving from gausspari to gaussparf must not move a source.
+
+    This is the path init uses to homogenise resolution. It is sensitive to
+    the Gaussian kernel's support: truncating the kernel too near its core
+    makes the division by its transform ring badly enough to displace the
+    peak by twice its offset from the image centre.
+    """
+    y0, x0 = npix // 3, npix // 2 + 4
+    image = np.zeros((1, npix, npix))
+    image[0, y0, x0] = 1.0
+    v = -(npix // 2) + np.arange(npix)
+    xx, yy = np.meshgrid(v, v, indexing="ij")
+
+    out, _ = convolve2gaussres(
+        image,
+        xx,
+        yy,
+        np.array([[6.3, 4.2, 0.0]]),
+        1,
+        gausspari=np.array([[6.0, 4.0, 0.0]]),
+        yx_order=True,
+    )
+
+    assert np.unravel_index(np.argmax(out[0]), out[0].shape) == (y0, x0)
+    if npix >= 128:
+        # Ringing is only meaningfully bounded once the beam is small relative
+        # to the image. At npix=32 a 6-pixel beam spans a fifth of the frame and
+        # large ringing is physical, not a defect.
+        assert abs(out[0].min()) < 0.1 * out[0].max()
