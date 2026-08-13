@@ -121,3 +121,18 @@ def test_convolve2gaussres_rejects_a_mismatched_per_plane_target():
 
     with pytest.raises(ValueError, match="gaussparf"):
         convolve2gaussres(image, xx, yy, targets, 1)
+
+
+def test_convolve2gaussres_accepts_a_numpy_gausspari():
+    """gausspari as an array must not trip an elementwise truth test."""
+    nx, ny = 48, 48
+    xx, yy = _grids(nx, ny)
+    image = np.zeros((2, nx, ny))
+    image[:, nx // 2, ny // 2] = 1.0
+    gausspari = np.array([[4.0, 4.0, 0.0], [4.0, 4.0, 0.0]])
+    gaussparf = np.array([[8.0, 8.0, 0.0], [8.0, 8.0, 0.0]])
+
+    out, _ = convolve2gaussres(image, xx, yy, gaussparf, 1, gausspari=gausspari)
+
+    assert np.isfinite(out).all()
+    assert out[0, nx // 2, ny // 2] > 0.0

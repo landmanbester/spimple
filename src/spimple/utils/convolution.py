@@ -123,8 +123,10 @@ def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=
     image = np.pad(image, padding, mode="constant").astype(np.float64)
     imhat = r2c(iFs(image, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
 
-    # convolve to desired resolution
-    if gausspari in [None, ()]:
+    # convolve to desired resolution. Not `gausspari in [None, ()]`: that is an
+    # elementwise comparison for a numpy array and raises "truth value of an
+    # array is ambiguous". The legacy callers only ever passed tuples.
+    if gausspari is None or np.size(gausspari) == 0:
         imhat *= gausskernhat
     else:
         for i in range(nband):
