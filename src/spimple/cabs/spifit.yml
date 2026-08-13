@@ -1,113 +1,143 @@
 cabs:
   spifit:
     flavour: python
-    command: (spimple.cli.spifit)spifit
-    info: Fit spectral index map.
-    image: # tell to stimela where to get cab for this version of package
-      name: 
-      version:
+    command: spimple.core.spifit.spifit
+    name: spifit
+    info:
+      Fit spectral index map.
     policies:
       pass_missing_as_none: true
+    image: ghcr.io/landmanbester/spimple:latest
     inputs:
-      image:
+      images:
+        info:
+          Images to process
         dtype: List[str]
-        info: ''
         required: true
         policies:
-          repeat: list
-      output_filename:
+          positional: true
+      output-filename:
+        info:
+          Basename of output products
         dtype: File
-        info: ''
         required: true
+        policies:
+          positional: true
       residual:
-        dtype: str
-        info: ''
-        required: false
-      psf_pars:
-        dtype: str
-        info: ''
-        required: false
-      circ_psf:
+        info:
+          Residual images matching the input images
+        dtype: Optional[List[str]]
+      psf-pars:
+        info:
+          PSF (beam) parameters matching FWHM of restoring beam specified as emaj emin pa.
+          Taken from the fits header by default.
+        dtype: Optional[Tuple[float, float, float]]
+      circ-psf:
+        info:
+          Flag to use circular restoring PSF (beam)
         dtype: bool
-        info: ''
-        required: false
-        default: --circ-psf
+        default: false
       threshold:
+        info:
+          Multiple of the rms in the residual to threshold on.
+          Only components above threshold*rms will be fit.
         dtype: float
-        info: ''
-        required: true
-      maxDR:
+        default: 10
+      max-dr:
+        info:
+          Maximum dynamic range used to determine the threshold.
+          Only used when residual is not available.
         dtype: float
-        info: ''
-        required: true
+        default: 1000
       nthreads:
-        dtype: str
-        info: ''
-        required: false
-      pfb_min:
+        info:
+          Number of threads to use.
+          Defaults to all
+        dtype: Optional[int]
+      pb-min:
+        info:
+          Don't fit components where the primary beam is less than this
         dtype: float
-        info: ''
-        required: true
+        default: 0.15
       products:
-        dtype: str
-        info: ''
-        required: true
-      padding_frac:
+        info:
+          Outputs to write, as a string of letters.
+          a is the alpha map.
+          e is the alpha error map.
+          i is the I0 map.
+          k is the I0 error map.
+          I is the cube reconstructed from alpha and I0.
+          c is the restoring beam used for convolution.
+          m is the convolved model.
+          r is the convolved residual.
+          b is the average power beam.
+          d is the difference between data and fitted model.
+        default: aeikIcmrbd
+      padding-frac:
+        info:
+          Padding factor for FFT's.
         dtype: float
-        info: ''
-        required: true
-      dont_convolve:
+        default: 0.5
+      dont-convolve:
+        info:
+          Disable convolution with clean PSF (beam)
         dtype: bool
-        info: ''
-        required: false
-        default: --dont-convolve
-      channel_weights_keyword:
-        dtype: str
-        info: ''
-        required: true
-      channel_freqs:
-        dtype: str
-        info: ''
-        required: false
-      ref_freq:
-        dtype: str
-        info: ''
-        required: false
-      out_dtype:
-        dtype: str
-        info: ''
-        required: true
-      add_convolved_residuals:
+        default: false
+      channel-weights-keyword:
+        info:
+          Header for channel weight
+        default: WSCIMWG
+      channel-freqs:
+        info:
+          Optional channel frequencies overriding the fits coordinates.
+        dtype: Optional[List[float]]
+      ref-freq:
+        info:
+          Optional reference frequency to overwrite default taken from fits
+        dtype: Optional[float]
+      out-dtype:
+        info:
+          dtype of output images
+        default: f4
+      add-convolved-residuals:
+        info:
+          Flag to add the convolved residuals to the convolved model
         dtype: bool
-        info: ''
-        required: false
-        default: --add_convolved_residuals
+        default: false
       ms:
-        dtype: str
-        info: ''
-        required: false
-      beam_model:
-        dtype: str
-        info: ''
-        required: false
-      sparsify_time:
+        info:
+          Optional measurement sets used to get the parallactic angle rotation.
+        dtype: Optional[List[str]]
+      beam-model:
+        info:
+          Beam model to use.
+          For fits files the expected pattern is path/to/beam_folder/name_corr_re.fits and its _im.fits pair.
+          JimBeam is also accepted, in which case the beam comes from katbeam.
+        dtype: Optional[File]
+      sparsify-time:
+        info:
+          Subsample PA by this many integrations when computing PA during beam interpolation.
         dtype: int
-        info: ''
-        required: true
-      corr_type:
-        dtype: str
-        info: ''
-        required: true
+        default: 10
+      corr-type:
+        info:
+          Correlation type
+        choices:
+        - linear
+        - circular
+        default: linear
       band:
-        dtype: str
-        info: ''
-        required: true
-      deselect_bands:
-        dtype: str
-        info: ''
-        required: false
+        info:
+          Band to use with JimBeam.
+          L, UHF or S
+        default: L
+      deselect-bands:
+        info:
+          Optional bands to discard from the fit.
+        dtype: Optional[List[int]]
     outputs:
-      output_filename:
+      alpha-map:
         dtype: File
-        info: '{current.output_filename}.fits'
-        required: false
+        info:
+          Fitted spectral index map, written when products contains 'a'.
+        implicit: '{current.output-filename}.alpha.fits'

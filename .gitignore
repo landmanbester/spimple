@@ -81,9 +81,6 @@ target/
 profile_default/
 ipython_config.py
 
-# pyenv
-.python-version
-
 # pipenv
 #   According to pypa/pipenv#598, it is recommended to include Pipfile.lock in version control.
 #   However, in case of collaboration, if having platform-specific dependencies or dependencies
@@ -127,3 +124,10 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Editor config
+.vscode/
+
+# Ephemeral design specs and implementation plans (see CLAUDE.md).
+# Durable knowledge is folded into docs/wiki/ before a branch is finished.
+docs/superpowers/

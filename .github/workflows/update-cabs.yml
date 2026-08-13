@@ -1,0 +1,80 @@
+name: Update Cab Definitions
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  update-cabs:
+    name: Update cab image tags to latest
+    runs-on: ubuntu-latest
+    # Prevents loops if the App or the bot pushes
+    if: github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip checks]')
+
+    steps:
+      - name: Generate Token
+        id: generate_token
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Check out code
+        uses: actions/checkout@v6
+        with:
+          token: ${{ steps.generate_token.outputs.token }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+
+      - name: Cache uv dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        run: uv sync
+
+      - name: Install package
+        run: uv pip install -e .
+
+      - name: Update container image tag to latest
+        run: |
+          python -c "
+          import re
+          p = 'src/spimple/_container_image.py'
+          t = open(p).read()
+          t = re.sub(r'(CONTAINER_IMAGE\s*=\s*\".*:)[^\"]+', r'\g<1>latest', t)
+          open(p, 'w').write(t)
+          "
+
+      - name: Regenerate cab definitions with latest tag
+        run: uv run hip-cargo generate-cabs --module 'src/spimple/cli/*.py' --output-dir src/spimple/cabs
+
+      - name: Check for changes
+        id: check_changes
+        run: |
+          if git diff --quiet src/spimple/cabs/*.yml src/spimple/_container_image.py; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit and push updated cabs
+        if: steps.check_changes.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/spimple/cabs/*.yml src/spimple/_container_image.py
+          git commit -m "chore: update cab definitions [skip checks]"
+          git push

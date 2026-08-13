@@ -1,10 +1,9 @@
-from datetime import datetime, timezone
+import glob
 
+import numpy as np
 from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS
-from casacore.quanta import quantity
-import numpy as np
 
 
 def to4d(data):
@@ -94,16 +93,16 @@ def set_wcs(
     if header:
         header = w.to_header()
         header["RESTFRQ"] = ref_freq
-        header["ORIGIN"] = "pfb-imaging"
+        header["ORIGIN"] = "spimple"
         header["BTYPE"] = "Intensity"
         header["BUNIT"] = unit
         header["SPECSYS"] = "TOPOCENT"
         if ms_time is not None:
-            # TODO - probably a round about way of doing this
-            unix_time = quantity(f"{ms_time}s").to_unix_time()
-            utc_iso = datetime.fromtimestamp(unix_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            # ms_time is MJD seconds. Truncate to whole seconds before rendering
+            # DATE-OBS so the two header keys agree, as they did via strftime.
+            utc_iso = Time(ms_time / 86400.0, format="mjd", scale="utc").strftime("%Y-%m-%d %H:%M:%S")
             header["UTC_TIME"] = utc_iso
-            t = Time(utc_iso)
+            t = Time(utc_iso, scale="utc")
             t.format = "fits"
             header["DATE-OBS"] = t.value
 
@@ -225,3 +224,37 @@ def set_header_info(mhdr, ref_freq, freq_axis, beampars=None):
         new_hdr["BPA"] = beampars[2]
 
     return fits.Header(new_hdr)
+
+
+def expand_image_patterns(patterns: list[str]) -> list[str]:
+    """Expand glob patterns into a sorted list of existing file paths.
+
+    Replaces the hip-cargo ``expand_patterns`` Typer callback, which was removed
+    upstream. This lives in the implementation layer rather than the CLI wrapper
+    because the generated cab's ``command:`` targets ``spimple.core.*``, so Stimela
+    never executes the wrapper.
+
+    Args:
+        patterns: Glob patterns and/or literal paths.
+
+    Returns:
+        Sorted, de-duplicated list of matching paths as strings.
+
+    Raises:
+        FileNotFoundError: If any pattern matches no existing file.
+    """
+    expanded: list[str] = []
+    for pattern in patterns:
+        # Only treat entries containing glob metacharacters as patterns; a literal
+        # path is passed straight through so a missing file fails later, where the
+        # error message can say what was being read.
+        is_glob = any(char in pattern for char in "*?[")
+        # Path.glob() raises NotImplementedError for absolute patterns (e.g. the
+        # Stimela cab's usual "/data/images/*-image.fits"), so the stdlib glob
+        # module is used deliberately here instead of ruff's suggested Path.glob.
+        matches = sorted(glob.glob(pattern)) if is_glob else [pattern]
+        if not matches:
+            msg = f"No files match pattern: {pattern}"
+            raise FileNotFoundError(msg)
+        expanded.extend(matches)
+    return sorted(dict.fromkeys(expanded))

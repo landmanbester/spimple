@@ -1,81 +1,115 @@
-name: CI/CD
+name: CI
 
 on:
-  pull_request:
   push:
-    branches:
-      - main
-      - master
-    tags:
-      - '**'
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
+  quality:
+    name: Code Quality
+    runs-on: ubuntu-latest
+    env:
+      SKIP_CHECKS: 'false'
+    steps:
+      - name: Check for skip checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          MSG=$(gh api repos/${{ github.repository }}/commits/$COMMIT_SHA --jq '.commit.message')
+          if echo "$MSG" | grep -qF '[skip checks]'; then
+            echo "SKIP_CHECKS=true" >> "$GITHUB_ENV"
+            echo "Skipping checks because [skip checks] was found in the commit message."
+          fi
+
+      - name: Check out code
+        if: env.SKIP_CHECKS != 'true'
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        if: env.SKIP_CHECKS != 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.10"
+
+      - name: Set up uv
+        if: env.SKIP_CHECKS != 'true'
+        uses: astral-sh/setup-uv@v7
+
+      - name: Cache uv dependencies
+        if: env.SKIP_CHECKS != 'true'
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/uv
+          key: ${{ runner.os }}-uv-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-
+
+      - name: Install dependencies
+        if: env.SKIP_CHECKS != 'true'
+        run: uv sync --group dev
+
+      - name: Check code formatting
+        if: env.SKIP_CHECKS != 'true'
+        run: uv run ruff format --check .
+
+      - name: Lint code
+        if: env.SKIP_CHECKS != 'true'
+        run: uv run ruff check .
+
   test:
-    runs-on: ${{ matrix.os }}
+    name: Tests
+    runs-on: ubuntu-latest
+    env:
+      SKIP_CHECKS: 'false'
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-22.04, ubuntu-24.04]
-        python-version: ["3.10", "3.11", "3.12"]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
 
     steps:
-      - name: Checkout source
+      - name: Check for skip checks
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          MSG=$(gh api repos/${{ github.repository }}/commits/$COMMIT_SHA --jq '.commit.message')
+          if echo "$MSG" | grep -qF '[skip checks]'; then
+            echo "SKIP_CHECKS=true" >> "$GITHUB_ENV"
+            echo "Skipping checks because [skip checks] was found in the commit message."
+          fi
+
+      - name: Check out code
+        if: env.SKIP_CHECKS != 'true'
         uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
 
       - name: Set up Python ${{ matrix.python-version }}
+        if: env.SKIP_CHECKS != 'true'
         uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: Install uv
+      - name: Set up uv
+        if: env.SKIP_CHECKS != 'true'
         uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
 
-      - name: Set up uv cache
+      - name: Cache uv dependencies
+        if: env.SKIP_CHECKS != 'true'
         uses: actions/cache@v5
         with:
           path: ~/.cache/uv
-          key: uv-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('**/uv.lock') }}
+          key: ${{ runner.os }}-uv-py${{ matrix.python-version }}-${{ hashFiles('uv.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-uv-py${{ matrix.python-version }}-
+            ${{ runner.os }}-uv-
 
       - name: Install dependencies
-        run: uv sync --extra dev --extra full
+        if: env.SKIP_CHECKS != 'true'
+        run: uv sync --extra full --group dev
 
       - name: Run tests
-        run: uv run pytest -s -vvv tests/
-
-  deploy:
-    needs: [test]
-    runs-on: ubuntu-latest
-    if: >
-      github.event_name == 'push' &&
-      (startsWith(github.ref, 'refs/tags/') ||
-       github.ref == 'refs/heads/master' ||
-       github.ref == 'refs/heads/main')
-
-    permissions:
-      id-token: write
-
-    steps:
-      - name: Checkout source
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Python
-        uses: actions/setup-python@v6
-        with:
-          python-version: '3.x'
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
-        with:
-          version: "latest"
-
-      - name: Build distributions
-        run: uv build
-
-      - name: Publish distribution 📦 to PyPI
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: pypa/gh-action-pypi-publish@release/v1
+        if: env.SKIP_CHECKS != 'true'
+        run: uv run pytest -v tests/

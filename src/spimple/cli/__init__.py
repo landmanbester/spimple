@@ -16,18 +16,18 @@ def callback():
 
 
 # Import and register commands
-from spimple.cli.spifit import spifit
+from spimple.cli.spifit import spifit  # noqa: E402
 
 app.command(name="spifit")(spifit)
 
-from spimple.cli.imconv import imconv
+from spimple.cli.imconv import imconv  # noqa: E402
 
 app.command(name="imconv")(imconv)
 
-from spimple.cli.binterp import binterp
+from spimple.cli.binterp import binterp  # noqa: E402
 
 app.command(name="binterp")(binterp)
 
-from spimple.cli.mosaic import mosaic
+from spimple.cli.mosaic import mosaic  # noqa: E402
 
 app.command(name="mosaic")(mosaic)
