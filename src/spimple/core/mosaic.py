@@ -2,18 +2,16 @@
 
 import multiprocessing
 from pathlib import Path
-import time
 
 from astropy.io import fits
 import numpy as np
-import pyscilog
 import ray
 
 from spimple.utils.fits import expand_image_patterns, set_wcs
+from spimple.utils.logging import get_logger, log_options
 from spimple.utils.mosaic import mosaic_info, project, stitch_images
 
-pyscilog.init("spimple")
-log = pyscilog.get_logger("MOSAIC")
+log = get_logger("MOSAIC")
 
 
 def mosaic(
@@ -38,13 +36,9 @@ def mosaic(
     mosaic image using interpolation to handle different coordinate systems
     and spatial coverage.
     """
-    images = expand_image_patterns(images)
+    log_options(log, **locals())
 
-    # logging
-    timestamp = time.strftime("%Y%m%d-%H%M%S")
-    logname = f"mosaic_{timestamp}.log"
-    pyscilog.log_to_file(logname)
-    print(f"Logs will be written to {logname}", file=log)
+    images = expand_image_patterns(images)
 
     # ray init
     if not nthreads:
@@ -57,28 +51,13 @@ def mosaic(
         local_mode=debug,
     )
 
-    print("Input Options:", file=log)
-    print(f"     {'images':>25} = {images}", file=log)
-    print(f"     {'output_filename':>25} = {output_filename}", file=log)
-    print(f"     {'beam_model':>25} = {beam_model}", file=log)
-    print(f"     {'band':>25} = {band}", file=log)
-    print(f"     {'ref_image':>25} = {ref_image}", file=log)
-    print(f"     {'padding':>25} = {padding}", file=log)
-    print(f"     {'method':>25} = {method}", file=log)
-    print(f"     {'nthreads':>25} = {nthreads}", file=log)
-    print(f"     {'nworkers':>25} = {nworkers}", file=log)
-    print(f"     {'out_dtype':>25} = {out_dtype}", file=log)
-    print(f"     {'convolve':>25} = {convolve}", file=log)
-    print(f"     {'redo_project':>25} = {redo_project}", file=log)
-    print(f"     {'debug':>25} = {debug}", file=log)
-
     path = Path(output_filename)
     if not path.parent.exists():
-        print(f"Creating output directory: {path.parent}", file=log)
+        log.info("Creating output directory: %s", path.parent)
         path.parent.mkdir(parents=True, exist_ok=True)
 
     # project images
-    print("Generating reference header", file=log)
+    log.info("Generating reference header")
     if isinstance(images, str):
         image_list = sorted(Path().glob(images))
     else:
@@ -93,7 +72,7 @@ def mosaic(
 
     nyo, nxo = ref_wcs.array_shape
     nchano = ufreqs.size
-    print(f"Output image will be of shape ({nchano}, {nxo}, {nyo})", file=log)
+    log.info("Output image will be of shape (%s, %s, %s)", nchano, nxo, nyo)
 
     # check if projection has been done
     do_project = False
@@ -106,7 +85,7 @@ def mosaic(
         do_project = True
 
     if do_project:
-        print("Projecting images onto common wcs", file=log)
+        log.info("Projecting images onto common wcs")
         tasks = []
         for imnum, im in enumerate(image_list):
             fut = project.remote(im, imnum, ref_wcs, beam_model, output_filename)
@@ -121,9 +100,9 @@ def mosaic(
             # Process the completed task
             for task in ready:
                 result = ray.get(task)
-                print(f"Completed: {result}", file=log)
+                log.info("Completed: %s", result)
 
-    print("Solving linear system", file=log)
+    log.info("Solving linear system")
     outim = np.zeros((nchano, nxo, nyo))
     outwgt = np.zeros((nchano, nxo, nyo))
     tasks = []
@@ -140,10 +119,7 @@ def mosaic(
         # Process the completed task
         for task in ready:
             image, weight, info, freq = ray.get(task)
-            print(
-                f"Conjugate gradient completed after {info} iterations for freq = {freq}",
-                file=log,
-            )
+            log.info("Conjugate gradient completed after %s iterations for freq = %s", info, freq)
             c = np.nonzero(ufreqs == freq)[0]
             outim[c] = image
             outwgt[c] = outwgt
@@ -172,14 +148,14 @@ def mosaic(
     hdu = fits.PrimaryHDU(header=out_hdr)
     hdu.data = outim
     hdu.writeto(output_filename, overwrite=True)
-    print(f"Saved mosaic to {output_filename}", file=log)
+    log.info("Saved mosaic to %s", output_filename)
 
     # Save weight map
     weight_filename = output_filename.replace(".fits", "_weights.fits")
     hdu.data = outwgt
     hdu.writeto(weight_filename, overwrite=True)
-    print(f"Saved weight map to {weight_filename}", file=log)
+    log.info("Saved weight map to %s", weight_filename)
 
-    print("Mosaic completed successfully", file=log)
+    log.info("Mosaic completed successfully")
 
     ray.shutdown()

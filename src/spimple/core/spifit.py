@@ -7,14 +7,13 @@ from astropy.io import fits
 import dask.array as da
 from katbeam import JimBeam
 import numpy as np
-import pyscilog
 
 from spimple.utils.beam import interpolate_beam
 from spimple.utils.convolution import convolve2gaussres
 from spimple.utils.fits import data_from_header, expand_image_patterns, load_fits, save_fits, set_header_info
+from spimple.utils.logging import get_logger, log_options
 
-pyscilog.init("spimple")
-log = pyscilog.get_logger("SPIFIT")
+log = get_logger("SPIFIT")
 
 
 def spifit(
@@ -54,42 +53,17 @@ def spifit(
     product selection, and is designed for efficient processing of large datasets using
     Dask for parallelization.
     """
+    log_options(log, **locals())
+
     image = expand_image_patterns(image)
     if residual is not None:
         residual = expand_image_patterns(residual)
 
-    pyscilog.log_to_file("spifit.log")
-
     if not nthreads:
         nthreads = multiprocessing.cpu_count()
 
-    print("Input Options:", file=log)
-    print(f"     {'image':>25} = {image}", file=log)
-    print(f"     {'output_filename':>25} = {output_filename}", file=log)
-    print(f"     {'residual':>25} = {residual}", file=log)
-    print(f"     {'psf_pars':>25} = {psf_pars}", file=log)
-    print(f"     {'circ_psf':>25} = {circ_psf}", file=log)
-    print(f"     {'threshold':>25} = {threshold}", file=log)
-    print(f"     {'maxDR':>25} = {maxDR}", file=log)
-    print(f"     {'nthreads':>25} = {nthreads}", file=log)
-    print(f"     {'pfb_min':>25} = {pfb_min}", file=log)
-    print(f"     {'products':>25} = {products}", file=log)
-    print(f"     {'padding_frac':>25} = {padding_frac}", file=log)
-    print(f"     {'dont_convolve':>25} = {dont_convolve}", file=log)
-    print(f"     {'channel_weights_keyword':>25} = {channel_weights_keyword}", file=log)
-    print(f"     {'channel_freqs':>25} = {channel_freqs}", file=log)
-    print(f"     {'ref_freq':>25} = {ref_freq}", file=log)
-    print(f"     {'out_dtype':>25} = {out_dtype}", file=log)
-    print(f"     {'add_convolved_residuals':>25} = {add_convolved_residuals}", file=log)
-    print(f"     {'ms':>25} = {ms}", file=log)
-    print(f"     {'beam_model':>25} = {beam_model}", file=log)
-    print(f"     {'sparsify_time':>25} = {sparsify_time}", file=log)
-    print(f"     {'corr_type':>25} = {corr_type}", file=log)
-    print(f"     {'band':>25} = {band}", file=log)
-    print(f"     {'deselect_bands':>25} = {deselect_bands}", file=log)
-
     if psf_pars is None:
-        print("Attempting to take psf_pars from residual/image fits header", file=log)
+        log.info("Attempting to take psf_pars from residual/image fits header")
         try:
             rhdr = fits.getheader(residual[0])
         except Exception:
@@ -122,7 +96,7 @@ def spifit(
     emaj = gaussparf[0]
     emin = gaussparf[1]
     pa = gaussparf[2]
-    print(f"Using emaj = {emaj:3.2e}, emin = {emin:3.2e}, PA = {pa:3.2e}", file=log)
+    log.info("Using emaj = %3.2e, emin = %3.2e, PA = %3.2e", emaj, emin, pa)
 
     # load model images or cube
     model_header = {}
@@ -184,15 +158,12 @@ def spifit(
     ref_freq_param = ref_freq  # Store parameter value
     if ref_freq_param is not None and ref_freq_param != ref_freq:
         ref_freq = ref_freq_param
-        print(
-            "Provided reference frequency does not match that of fits file. Will overwrite.",
-            file=log,
-        )
+        log.info("Provided reference frequency does not match that of fits file. Will overwrite.")
 
-    print("Cube frequencies:", file=log)
+    log.info("Cube frequencies:")
     with np.printoptions(precision=2):
-        print(freqs, file=log)
-    print(f"Reference frequency is {ref_freq:3.2e} Hz", file=log)
+        log.info("%s", freqs)
+    log.info("Reference frequency is %3.2e Hz", ref_freq)
 
     # LB - new header for cubes if ref_freqs differ
     new_hdr = set_header_info(mhdr, ref_freq, freq_axis, beampars=gaussparf)
@@ -265,7 +236,7 @@ def spifit(
                 mhdr,
                 dtype=out_dtype,
             )
-            print(f"Wrote average power beam to {name}", file=log)
+            log.info("Wrote average power beam to %s", name)
 
     else:
         beam_image = np.ones(model.shape, dtype=out_dtype)
@@ -274,7 +245,7 @@ def spifit(
     model = np.where(beam_image > pfb_min, model, 0.0)
 
     if not dont_convolve:
-        print("Convolving model", file=log)
+        log.info("Convolving model")
         # convolve model to desired resolution
         model, gausskern = convolve2gaussres(model, xx, yy, gaussparf, nthreads, None, padding_frac)
 
@@ -282,13 +253,13 @@ def spifit(
         if "c" in products:
             name = outfile + ".clean_psf.fits"
             save_fits(name, gausskern, new_hdr, dtype=out_dtype)
-            print(f"Wrote clean psf to {name}", file=log)
+            log.info("Wrote clean psf to %s", name)
 
         # save convolved model
         if "m" in products:
             name = outfile + ".convolved_model.fits"
             save_fits(name, model, new_hdr, dtype=out_dtype)
-            print(f"Wrote convolved model to {name}", file=log)
+            log.info("Wrote convolved model to %s", name)
 
     # add in residuals and set threshold
     if residual:
@@ -331,16 +302,13 @@ def spifit(
                     pa = hdr["BPA" + str(i)]
                     gausspari += ((emaj, emin, pa),)
         if gausspari:
-            print(f"Gausspars in residual header: {gausspari}", file=log)  # type: ignore[unreachable]
+            log.info("Gausspars in residual header: %s", gausspari)  # type: ignore[unreachable]
         else:
-            print(
-                "Can't find Gausspars in residual header, unable to add residuals back in",
-                file=log,
-            )
+            log.info("Can't find Gausspars in residual header, unable to add residuals back in")
             gausspari = None
 
         if gausspari is not None and add_convolved_residuals:  # type: ignore[unreachable]
-            print("Convolving residuals", file=log)  # type: ignore[unreachable]
+            log.info("Convolving residuals")  # type: ignore[unreachable]
             resid, _ = convolve2gaussres(
                 resid,
                 xx,
@@ -352,32 +320,29 @@ def spifit(
                 norm_kernel=False,
             )
             model += resid
-            print("Convolved residuals added to convolved model", file=log)
+            log.info("Convolved residuals added to convolved model")
 
             if "r" in products:
                 name = outfile + ".convolved_residual.fits"
                 save_fits(name, resid, rhdr[0])
-                print(f"Wrote convolved residuals to {name}", file=log)
+                log.info("Wrote convolved residuals to %s", name)
 
         counts = np.sum(resid != 0)
         rms = np.sqrt(np.sum(resid**2) / counts)
         rms_cube = np.std(resid.reshape(nband, npix_l * npix_m), axis=1).ravel()
         threshold_val = threshold * rms
-        print(
-            f"Setting cutoff threshold as {threshold} times the rms of the residual ",
-            file=log,
-        )
+        log.info("Setting cutoff threshold as %s times the rms of the residual ", threshold)
         del resid
     else:
-        print(
-            f"No residual provided. Setting  threshold i.t.o dynamic range. Max dynamic range is {maxDR}",
-            file=log,
+        log.info(
+            "No residual provided. Setting  threshold i.t.o dynamic range. Max dynamic range is %s",
+            maxDR,
         )
         mask = ~np.isnan(model)
         threshold_val = model[mask].max() / maxDR
         rms_cube = None
 
-    print(f"Threshold set to {threshold_val} Jy.", file=log)
+    log.info("Threshold set to %s Jy.", threshold_val)
 
     # remove completely nan slices
     freq_mask = np.isnan(model)
@@ -385,7 +350,7 @@ def spifit(
 
     # exclude any bands that might be awful
     if deselect_bands:
-        print(f"Deselected bands are: {deselect_bands}", file=log)
+        log.info("Deselected bands are: %s", deselect_bands)
         for bidx in deselect_bands:
             fidx[bidx] = False
 
@@ -417,32 +382,26 @@ def spifit(
         weights = np.array(channel_weights)[fidx]
         try:
             assert weights.size == nband
-            print("Using provided channel weights.", file=log)
+            log.info("Using provided channel weights.")
         except Exception as e:
-            print(
-                "Number of provided channel weights not equal to number of imaging bands",
-                file=log,
-            )
+            log.info("Number of provided channel weights not equal to number of imaging bands")
     else:
         if residual:
-            print("Getting weights from list of image headers.", file=log)
+            log.info("Getting weights from list of image headers.")
             rhdr = []
             for res in residual:
                 rhdr.append(fits.getheader(res))
             weights = np.array([hdr["WSCVWSUM"] for hdr in rhdr])
             weights /= weights.max()
         elif rms_cube is not None:
-            print("Using RMS in each imaging band to determine weights.", file=log)
+            log.info("Using RMS in each imaging band to determine weights.")
             weights = np.where(rms_cube[fidx] > 0, 1.0 / rms_cube[fidx] ** 2, 0.0)
             # normalise
             weights /= weights.max()
         else:
-            print(
-                "No residual or channel weights provided. Using equal weights.",
-                file=log,
-            )
+            log.info("No residual or channel weights provided. Using equal weights.")
             weights = np.ones(fidx.sum(), dtype=np.float64)
-        print(f"Channel weights: {weights}", file=log)
+        log.info("Channel weights: %s", weights)
 
     ncomps, _ = fitcube.shape
     cchunks = np.maximum(1, ncomps // nthreads)
@@ -451,11 +410,11 @@ def spifit(
     weights = da.from_array(weights.astype(np.float64), chunks=(nband))
     freqsdask = da.from_array(freqs.astype(np.float64), chunks=(nband))
 
-    print(f"Fitting {ncomps} components", file=log)
+    log.info("Fitting %s components", ncomps)
     alpha, alpha_err, Iref, i0_err = fit_spi_components(
         fitcube, weights, freqsdask, np.float64(ref_freq), beam=beam_comps
     ).compute()
-    print("Done. Writing output.", file=log)
+    log.info("Done. Writing output.")
 
     alphamap = np.zeros(model[0].shape, dtype=model.dtype)
     alphamap[...] = np.nan
@@ -486,7 +445,7 @@ def spifit(
             mhdr,
             dtype=out_dtype,
         )
-        print(f"Wrote reconstructed cube to {name}", file=log)
+        log.info("Wrote reconstructed cube to %s", name)
 
     if "d" in products:
         # get the reconstructed cube
@@ -497,30 +456,30 @@ def spifit(
             mhdr,
             dtype=out_dtype,
         )
-        print(f"Wrote reconstructed cube to {name}", file=log)
+        log.info("Wrote reconstructed cube to %s", name)
 
     # save alpha map
     if "a" in products:
         name = outfile + ".alpha.fits"
         save_fits(name, alphamap, mhdr, dtype=out_dtype)
-        print(f"Wrote alpha map to {name}", file=log)
+        log.info("Wrote alpha map to %s", name)
 
     # save alpha error map
     if "e" in products:
         name = outfile + ".alpha_err.fits"
         save_fits(name, alpha_err_map, mhdr, dtype=out_dtype)
-        print(f"Wrote alpha error map to {name}", file=log)
+        log.info("Wrote alpha error map to %s", name)
 
     # save I0 map
     if "i" in products:
         name = outfile + ".I0.fits"
         save_fits(name, i0map, mhdr, dtype=out_dtype)
-        print(f"Wrote I0 map to {name}", file=log)
+        log.info("Wrote I0 map to %s", name)
 
     # save I0 error map
     if "k" in products:
         name = outfile + ".I0_err.fits"
         save_fits(name, i0_err_map, mhdr, dtype=out_dtype)
-        print(f"Wrote I0 error map to {name}", file=log)
+        log.info("Wrote I0 error map to %s", name)
 
-    print("All done here", file=log)
+    log.info("All done here")

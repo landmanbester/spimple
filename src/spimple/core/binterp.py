@@ -4,13 +4,12 @@ import multiprocessing
 
 from astropy.io import fits
 import numpy as np
-import pyscilog
 
 from spimple.utils.beam import interpolate_beam
 from spimple.utils.fits import data_from_header, expand_image_patterns, save_fits, set_header_info
+from spimple.utils.logging import get_logger, log_options
 
-pyscilog.init("spimple")
-log = pyscilog.get_logger("BINTERP")
+log = get_logger("BINTERP")
 
 
 def binterp(
@@ -33,22 +32,12 @@ def binterp(
     with relevant frequency metadata, and writes the resulting beam cube
     to the specified output file.
     """
-    image = expand_image_patterns(image)
+    log_options(log, **locals())
 
-    pyscilog.log_to_file("binterp.log")
+    image = expand_image_patterns(image)
 
     if not nthreads:
         nthreads = multiprocessing.cpu_count()
-
-    print("Input Options:", file=log)
-    print(f"     {'image':>25} = {image}", file=log)
-    print(f"     {'output_filename':>25} = {output_filename}", file=log)
-    print(f"     {'ms':>25} = {ms}", file=log)
-    print(f"     {'field':>25} = {field}", file=log)
-    print(f"     {'beam_model':>25} = {beam_model}", file=log)
-    print(f"     {'sparsify_time':>25} = {sparsify_time}", file=log)
-    print(f"     {'nthreads':>25} = {nthreads}", file=log)
-    print(f"     {'corr_type':>25} = {corr_type}", file=log)
 
     # get coord info
     hdr = fits.getheader(image[0])
@@ -84,4 +73,4 @@ def binterp(
 
     # save power beam
     save_fits(output_filename, beam_image, new_hdr)
-    print(f"Wrote interpolated beam cube to {output_filename}", file=log)
+    log.info("Wrote interpolated beam cube to %s", output_filename)

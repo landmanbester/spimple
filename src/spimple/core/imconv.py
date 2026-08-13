@@ -6,13 +6,12 @@ from pathlib import Path
 from astropy.io import fits
 from katbeam import JimBeam
 import numpy as np
-import pyscilog
 
 from spimple.utils.convolution import convolve2gaussres
 from spimple.utils.fits import data_from_header, expand_image_patterns, load_fits, save_fits
+from spimple.utils.logging import get_logger, log_options
 
-pyscilog.init("spimple")
-log = pyscilog.get_logger("IMCONV")
+log = get_logger("IMCONV")
 
 
 def imconv(
@@ -29,26 +28,12 @@ def imconv(
     padding_frac: float = 0.5,
     out_dtype: str = "f4",
 ):
-    image = expand_image_patterns(image)
+    log_options(log, **locals())
 
-    pyscilog.log_to_file("image_convolver.log")
+    image = expand_image_patterns(image)
 
     if not nthreads:
         nthreads = multiprocessing.cpu_count()
-
-    print("Input Options:", file=log)
-    print(f"     {'image':>25} = {image}", file=log)
-    print(f"     {'output_filename':>25} = {output_filename}", file=log)
-    print(f"     {'products':>25} = {products}", file=log)
-    print(f"     {'psf_pars':>25} = {psf_pars}", file=log)
-    print(f"     {'nthreads':>25} = {nthreads}", file=log)
-    print(f"     {'circ_psf':>25} = {circ_psf}", file=log)
-    print(f"     {'dilate':>25} = {dilate}", file=log)
-    print(f"     {'beam_model':>25} = {beam_model}", file=log)
-    print(f"     {'band':>25} = {band}", file=log)
-    print(f"     {'pb_min':>25} = {pb_min}", file=log)
-    print(f"     {'padding_frac':>25} = {padding_frac}", file=log)
-    print(f"     {'out_dtype':>25} = {out_dtype}", file=log)
 
     # read coords from fits file
     hdr = fits.getheader(image[0])
@@ -89,14 +74,11 @@ def imconv(
         gausspari = ((emaj, emin, pa),)
 
     if len(gausspari) == 0 and psf_pars is None:
-        print("No psf parameters in fits file and none passed in.", file=log)
+        log.info("No psf parameters in fits file and none passed in.")
         raise ValueError("No psf parameters in fits file and none passed in.")
 
     if len(gausspari) == 0:
-        print(
-            "No psf parameters in fits file. Convolving model to resolution specified by psf-pars.",
-            file=log,
-        )
+        log.info("No psf parameters in fits file. Convolving model to resolution specified by psf-pars.")
         gaussparf = tuple(psf_pars)
     elif psf_pars is None:  # type: ignore[unreachable]
         gfi = gausspari[0]
@@ -107,10 +89,9 @@ def imconv(
             gaussparf[1] = np.maximum(gaussparf[1], gp[1] * dilate)
         gaussparf = tuple(gaussparf)
         if gaussparf[0] > gfi[0] * dilate or gaussparf[1] > gfi[1] * dilate:
-            print(
+            log.info(
                 "Warning - largest clean beam does not correspond to "
-                "band 0. You may want to consider removing such bands.",
-                file=log,
+                "band 0. You may want to consider removing such bands."
             )
     else:
         gaussparf = tuple(psf_pars)
@@ -131,7 +112,7 @@ def imconv(
     emaj = gaussparf[0]
     emin = gaussparf[1]
     pa = gaussparf[2]
-    print(f"Using emaj = {emaj:3.2e}, emin = {emin:3.2e}, PA = {pa:3.2e}", file=log)
+    log.info("Using emaj = %3.2e, emin = %3.2e, PA = %3.2e", emaj, emin, pa)
 
     # update header
     if freqs.size > 1:
@@ -153,7 +134,7 @@ def imconv(
         imagei = imagei[None, :, :]
     if imagei.ndim != 3:
         raise ValueError("Unsupported number of image dimensions")
-    print("Convolving image", file=log)
+    log.info("Convolving image")
 
     image_out, gausskern = convolve2gaussres(imagei, xx, yy, gaussparf, nthreads, gausspari, padding_frac)
 
@@ -210,25 +191,25 @@ def imconv(
     if "c" in products:
         name = outfile + ".clean_psf.fits"
         save_fits(name, gausskern, hdr, dtype=out_dtype)
-        print(f"Wrote clean psf to {name}", file=log)
+        log.info("Wrote clean psf to %s", name)
 
     if "i" in products:
         name = outfile + ".convolved.fits"
         save_fits(name, image_out, hdr, dtype=out_dtype)
-        print(f"Wrote convolved image to {name}", file=log)
+        log.info("Wrote convolved image to %s", name)
 
     if "b" in products:
         if "beam_image" not in locals():
             raise ValueError("Cannot write power beam: no beam model provided")
         name = outfile + ".power_beam.fits"
         save_fits(name, beam_image, hdr, dtype=out_dtype)
-        print(f"Wrote average power beam to {name}", file=log)
+        log.info("Wrote average power beam to %s", name)
 
     if "w" in products:
         if "beam_image" not in locals():
             raise ValueError("Cannot write spatial weight: no beam model provided")
         name = outfile + ".spatial_weight.fits"
         save_fits(name, beam_image**2, hdr, dtype=out_dtype)
-        print(f"Wrote spatial weight to {name}", file=log)
+        log.info("Wrote spatial weight to %s", name)
 
-    print("All done here", file=log)
+    log.info("All done here")
