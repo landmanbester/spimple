@@ -8,8 +8,8 @@ from katbeam import JimBeam
 import numpy as np
 import pyscilog
 
-from spimple.core.fits import data_from_header, expand_image_patterns, load_fits, save_fits
-from spimple.core.utils import convolve2gaussres
+from spimple.utils.convolution import convolve2gaussres
+from spimple.utils.fits import data_from_header, expand_image_patterns, load_fits, save_fits
 
 pyscilog.init("spimple")
 log = pyscilog.get_logger("IMCONV")

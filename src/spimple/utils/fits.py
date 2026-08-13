@@ -1,10 +1,8 @@
-from datetime import datetime, timezone
 import glob
 
 from astropy.io import fits
 from astropy.time import Time
 from astropy.wcs import WCS
-from casacore.quanta import quantity
 import numpy as np
 
 
@@ -95,16 +93,16 @@ def set_wcs(
     if header:
         header = w.to_header()
         header["RESTFRQ"] = ref_freq
-        header["ORIGIN"] = "pfb-imaging"
+        header["ORIGIN"] = "spimple"
         header["BTYPE"] = "Intensity"
         header["BUNIT"] = unit
         header["SPECSYS"] = "TOPOCENT"
         if ms_time is not None:
-            # TODO - probably a round about way of doing this
-            unix_time = quantity(f"{ms_time}s").to_unix_time()
-            utc_iso = datetime.fromtimestamp(unix_time, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            # ms_time is MJD seconds. Truncate to whole seconds before rendering
+            # DATE-OBS so the two header keys agree, as they did via strftime.
+            utc_iso = Time(ms_time / 86400.0, format="mjd", scale="utc").strftime("%Y-%m-%d %H:%M:%S")
             header["UTC_TIME"] = utc_iso
-            t = Time(utc_iso)
+            t = Time(utc_iso, scale="utc")
             t.format = "fits"
             header["DATE-OBS"] = t.value
 

@@ -3,7 +3,7 @@ import numpy as np
 from numpy.testing._private.utils import assert_allclose
 import pytest
 
-from spimple.core.utils import Gaussian2D, convolve2gaussres
+from spimple.utils.convolution import Gaussian2D, convolve2gaussres
 
 pmp = pytest.mark.parametrize
 

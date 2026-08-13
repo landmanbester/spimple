@@ -6,8 +6,8 @@ from astropy.io import fits
 import numpy as np
 import pyscilog
 
-from spimple.core.fits import data_from_header, expand_image_patterns, save_fits, set_header_info
-from spimple.core.utils import interpolate_beam
+from spimple.utils.beam import interpolate_beam
+from spimple.utils.fits import data_from_header, expand_image_patterns, save_fits, set_header_info
 
 pyscilog.init("spimple")
 log = pyscilog.get_logger("BINTERP")

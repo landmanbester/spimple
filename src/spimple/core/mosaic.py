@@ -9,8 +9,8 @@ import numpy as np
 import pyscilog
 import ray
 
-from spimple.core.fits import expand_image_patterns, set_wcs
-from spimple.core.utils import mosaic_info, project, stitch_images
+from spimple.utils.fits import expand_image_patterns, set_wcs
+from spimple.utils.mosaic import mosaic_info, project, stitch_images
 
 pyscilog.init("spimple")
 log = pyscilog.get_logger("MOSAIC")
