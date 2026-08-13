@@ -1,58 +1,33 @@
 version: 2
 updates:
-  # Enable version updates for pip/PyPI dependencies
-  - package-ecosystem: "pip"
+  # Monitor Python dependencies (uv ecosystem keeps uv.lock in sync, unlike pip)
+  - package-ecosystem: "uv"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "06:00"
-      timezone: "UTC"
-    open-pull-requests-limit: 10
-    reviewers:
-      - "landmanbester"
-    assignees:
-      - "landmanbester"
+      time: "09:00"
+    open-pull-requests-limit: 5
     commit-message:
       prefix: "deps"
-      include: "scope"
+      prefix-development: "deps-dev"
     groups:
-      # Group minor and patch updates for core dependencies
-      core-dependencies:
-        patterns:
-          - "astropy*"
-          - "dask*"
-          - "codex-africanus*"
-          - "katbeam*"
-          - "omegaconf*"
-          - "pyscilog*"
-          - "reproject*"
-          - "ray*"
-        update-types:
-          - "minor"
-          - "patch"
-      # Group development dependencies
-      dev-dependencies:
-        patterns:
-          - "pytest*"
-          - "tbump*"
-        update-types:
-          - "minor"
-          - "patch"
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+      python-major:
+        update-types: ["major"]
 
-  # Enable version updates for GitHub Actions
+  # Monitor GitHub Actions
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
       day: "monday"
-      time: "06:00"
-      timezone: "UTC"
-    open-pull-requests-limit: 5
-    reviewers:
-      - "landmanbester"
-    assignees:
-      - "landmanbester"
+      time: "09:00"
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "ci"
-      include: "scope"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
