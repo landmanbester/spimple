@@ -4,9 +4,7 @@ This is how the project guarantees the committed cabs match the CLI source. If
 a wrapper is written in a shape hip-cargo cannot regenerate, the cab is
 unreliable -- fix the source, never the test.
 
-Scoped to the commands that have been converted to the canonical hip-cargo
-wrapper shape. Add each command here as it is converted; the final state is the
-full `cli/*.py` glob.
+Covers every command under cli/. A new command is picked up automatically.
 """
 
 import tempfile
@@ -16,10 +14,10 @@ import pytest
 from hip_cargo.core.generate_cabs import generate_cabs
 from hip_cargo.core.generate_function import generate_function
 
-CONVERTED_COMMANDS = ["imconv"]
+COMMANDS = sorted(p.stem for p in Path("src/spimple/cli").glob("*.py") if p.stem != "__init__")
 
 
-@pytest.mark.parametrize("command", CONVERTED_COMMANDS)
+@pytest.mark.parametrize("command", COMMANDS)
 def test_roundtrip(command):
     with tempfile.TemporaryDirectory() as tmpdir:
         tmpdir = Path(tmpdir)

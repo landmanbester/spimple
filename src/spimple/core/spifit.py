@@ -17,15 +17,15 @@ log = get_logger("SPIFIT")
 
 
 def spifit(
-    image: list[str],
+    images: list[str],
     output_filename: str,
     residual: list[str] | None = None,
     psf_pars: tuple[float, float, float] | None = None,
     circ_psf: bool = False,
     threshold: float = 10,
-    maxDR: float = 1000,
+    max_dr: float = 1000,
     nthreads: int | None = None,
-    pfb_min: float = 0.15,
+    pb_min: float = 0.15,
     products: str = "aeikIcmrbd",
     padding_frac: float = 0.5,
     dont_convolve: bool = False,
@@ -55,7 +55,7 @@ def spifit(
     """
     log_options(log, **locals())
 
-    image = expand_image_patterns(image)
+    images = expand_image_patterns(images)
     if residual is not None:
         residual = expand_image_patterns(residual)
 
@@ -67,7 +67,7 @@ def spifit(
         try:
             rhdr = fits.getheader(residual[0])
         except Exception:
-            rhdr = fits.getheader(image[0])
+            rhdr = fits.getheader(images[0])
 
         if "BMAJ1" in rhdr:
             emaj = rhdr["BMAJ1"]
@@ -100,7 +100,7 @@ def spifit(
 
     # load model images or cube
     model_header = {}
-    for i, m in enumerate(image):
+    for i, m in enumerate(images):
         model = load_fits(m, dtype=out_dtype).squeeze()
         orig_shape = model.shape
         mhdr = fits.getheader(m)
@@ -245,7 +245,7 @@ def spifit(
         beam_image = np.ones(model.shape, dtype=out_dtype)
 
     # beam cut off
-    model = np.where(beam_image > pfb_min, model, 0.0)
+    model = np.where(beam_image > pb_min, model, 0.0)
 
     if not dont_convolve:
         log.info("Convolving model")
@@ -339,10 +339,10 @@ def spifit(
     else:
         log.info(
             "No residual provided. Setting  threshold i.t.o dynamic range. Max dynamic range is %s",
-            maxDR,
+            max_dr,
         )
         mask = ~np.isnan(model)
-        threshold_val = model[mask].max() / maxDR
+        threshold_val = model[mask].max() / max_dr
         rms_cube = None
 
     log.info("Threshold set to %s Jy.", threshold_val)

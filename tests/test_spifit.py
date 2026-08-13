@@ -17,7 +17,7 @@ def test_recovers_the_injected_spectral_index(image_cube, residual_cube, true_al
     outname = tmp_path / "spi"
 
     spifit(
-        image=[image_cube],
+        images=[image_cube],
         output_filename=str(outname),
         residual=[residual_cube],
         products="ai",
@@ -37,7 +37,7 @@ def test_products_letters_select_outputs(image_cube, residual_cube, tmp_path):
     outname = tmp_path / "prod"
 
     spifit(
-        image=[image_cube],
+        images=[image_cube],
         output_filename=str(outname),
         residual=[residual_cube],
         products="ai",
@@ -60,7 +60,7 @@ def test_i0_map_is_positive_where_fit(image_cube, residual_cube, tmp_path):
     outname = tmp_path / "i0"
 
     spifit(
-        image=[image_cube],
+        images=[image_cube],
         output_filename=str(outname),
         residual=[residual_cube],
         products="ai",
@@ -86,12 +86,12 @@ def test_max_dr_threshold_used_without_residual(image_cube, tmp_path):
     outname = tmp_path / "nodr"
 
     spifit(
-        image=[image_cube],
+        images=[image_cube],
         output_filename=str(outname),
         products="a",
         nthreads=1,
         dont_convolve=True,
-        maxDR=100,
+        max_dr=100,
     )
 
     assert (tmp_path / "nodr.alpha.fits").exists()

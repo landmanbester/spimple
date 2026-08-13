@@ -1,8 +1,21 @@
 from pathlib import Path
-from typing import Annotated, Literal
+from typing import Annotated, Literal, NewType
 
 import typer
-from hip_cargo import stimela_cab, stimela_output
+from hip_cargo import (
+    ListFloat,
+    ListInt,
+    ListStr,
+    StimelaMeta,
+    parse_list_float,
+    parse_list_int,
+    parse_list_str,
+    parse_upath,
+    stimela_cab,
+    stimela_output,
+)
+
+File = NewType("File", Path)
 
 
 @stimela_cab(
@@ -10,136 +23,300 @@ from hip_cargo import stimela_cab, stimela_output
     info="Fit spectral index map.",
     policies={"pass_missing_as_none": True},
 )
-@stimela_output(name="output_filename", dtype="File", info="{current.output_filename}.fits")
+@stimela_output(
+    dtype="File",
+    name="alpha-map",
+    info="Fitted spectral index map, written when products contains 'a'.",
+    implicit="{current.output-filename}.alpha.fits",
+)
 def spifit(
-    image: Annotated[list[str], typer.Option(..., help="Image to process")],
-    output_filename: Annotated[Path, typer.Option(..., help="Path to output directory + prefix")],
-    residual: Annotated[list[str] | None, typer.Option(help="Image to process")] = None,
+    images: Annotated[
+        ListStr,
+        typer.Option(
+            ...,
+            parser=parse_list_str,
+            help="Images to process",
+        ),
+    ],
+    output_filename: Annotated[
+        File,
+        typer.Option(
+            ...,
+            parser=parse_upath,
+            help="Basename of output products",
+        ),
+    ],
+    residual: Annotated[
+        ListStr | None,
+        typer.Option(
+            parser=parse_list_str,
+            help="Residual images matching the input images",
+        ),
+    ] = None,
     psf_pars: Annotated[
         tuple[float, float, float] | None,
         typer.Option(
-            help="PSF (beam) parameters matching FWHM of restoring beam specified as "
-            "emaj emin pa. Taken from the fits header by default."
+            help="PSF (beam) parameters matching FWHM of restoring beam specified as emaj emin pa. "
+            "Taken from the fits header by default.",
         ),
     ] = None,
-    circ_psf: Annotated[bool, typer.Option("--circ-psf", help="Flag to use circular restoring PSF (beam)")] = False,
+    circ_psf: Annotated[
+        bool,
+        typer.Option(
+            help="Flag to use circular restoring PSF (beam)",
+        ),
+    ] = False,
     threshold: Annotated[
         float,
         typer.Option(
-            help="Multiple of the rms in the residual to threshold on. Only components above threshold*rms will be fit."
+            help="Multiple of the rms in the residual to threshold on. "
+            "Only components above threshold*rms will be fit.",
         ),
     ] = 10,
-    maxDR: Annotated[
+    max_dr: Annotated[
         float,
         typer.Option(
-            help="Maximum dynamic range used to determine the threshold. Only used when residual is not available."
+            help="Maximum dynamic range used to determine the threshold. Only used when residual is not available.",
         ),
     ] = 1000,
-    nthreads: Annotated[int | None, typer.Option(help="Number of threads to use. Defaults to all")] = None,
-    pfb_min: Annotated[
-        float, typer.Option(help="Don't fit components where the primary beam is less than this")
+    nthreads: Annotated[
+        int | None,
+        typer.Option(
+            help="Number of threads to use. Defaults to all",
+        ),
+    ] = None,
+    pb_min: Annotated[
+        float,
+        typer.Option(
+            help="Don't fit components where the primary beam is less than this",
+        ),
     ] = 0.15,
     products: Annotated[
         str,
         typer.Option(
-            help="Outputs to write. Letter correspond to: \n"
-            "a - alpha map \n"
-            "e - alpha error map \n"
-            "i - I0 map \n"
-            "k - I0 error map \n"
-            "I - reconstructed cube form alpha and I0 \n"
-            "c - restoring beam used for convolution \n"
-            "m - convolved model \n"
-            "r - convolved residual \n"
-            "b - average power beam \n"
-            "d - difference between data and fitted model \n"
-            "Default is to write all of them"
+            help="Outputs to write, as a string of letters. "
+            "a is the alpha map. "
+            "e is the alpha error map. "
+            "i is the I0 map. "
+            "k is the I0 error map. "
+            "I is the cube reconstructed from alpha and I0. "
+            "c is the restoring beam used for convolution. "
+            "m is the convolved model. "
+            "r is the convolved residual. "
+            "b is the average power beam. "
+            "d is the difference between data and fitted model.",
         ),
     ] = "aeikIcmrbd",
-    padding_frac: Annotated[float, typer.Option(help="Padding factor for FFT's.")] = 0.5,
-    dont_convolve: Annotated[
-        bool, typer.Option("--dont-convolve", help="Disable convolution with clean PSF (beam)")
-    ] = False,
-    channel_weights_keyword: Annotated[str, typer.Option(help="Header for channel weight")] = "WSCIMWG",
-    channel_freqs: Annotated[
-        str | None,
+    padding_frac: Annotated[
+        float,
         typer.Option(
-            help="Optional channel frequencies to overwrite fits coordinates."
-            "Has to be passed in as a comma separated string."
+            help="Padding factor for FFT's.",
+        ),
+    ] = 0.5,
+    dont_convolve: Annotated[
+        bool,
+        typer.Option(
+            help="Disable convolution with clean PSF (beam)",
+        ),
+    ] = False,
+    channel_weights_keyword: Annotated[
+        str,
+        typer.Option(
+            help="Header for channel weight",
+        ),
+    ] = "WSCIMWG",
+    channel_freqs: Annotated[
+        ListFloat | None,
+        typer.Option(
+            parser=parse_list_float,
+            help="Optional channel frequencies overriding the fits coordinates.",
         ),
     ] = None,
     ref_freq: Annotated[
-        float | None, typer.Option(help="Optional reference frequency to overwrite default taken from fits")
+        float | None,
+        typer.Option(
+            help="Optional reference frequency to overwrite default taken from fits",
+        ),
     ] = None,
-    out_dtype: Annotated[str, typer.Option(help="dtype of output images")] = "f4",
+    out_dtype: Annotated[
+        str,
+        typer.Option(
+            help="dtype of output images",
+        ),
+    ] = "f4",
     add_convolved_residuals: Annotated[
         bool,
-        typer.Option("--add_convolved_residuals", help="Flag to add the convolved residuals to the convolved model"),
+        typer.Option(
+            help="Flag to add the convolved residuals to the convolved model",
+        ),
     ] = False,
     ms: Annotated[
-        Path | None, typer.Option(help="Optional path to MS used to get the paralactic angle rotation")
+        ListStr | None,
+        typer.Option(
+            parser=parse_list_str,
+            help="Optional measurement sets used to get the parallactic angle rotation.",
+        ),
     ] = None,
     beam_model: Annotated[
-        Path | None,
+        File | None,
         typer.Option(
-            help="Beam model to use. This can be provided as fits files in which case"
-            "it assumes the path/to/beam_folder/name_corr_re/im.fits pattern. "
-            "Also accepts JimBeam in which case it will get the beam from katbeam."
+            parser=parse_upath,
+            help="Beam model to use. "
+            "For fits files the expected pattern is path/to/beam_folder/name_corr_re.fits and its _im.fits pair. "
+            "JimBeam is also accepted, in which case the beam comes from katbeam.",
         ),
     ] = None,
     sparsify_time: Annotated[
-        int, typer.Option(help="Subsample PA by this many integrations when computing PA during beam interpolation.")
+        int,
+        typer.Option(
+            help="Subsample PA by this many integrations when computing PA during beam interpolation.",
+        ),
     ] = 10,
-    corr_type: Annotated[Literal["linear", "circular"], typer.Option(help="Correlation type")] = "linear",
-    band: Annotated[str, typer.Option(help="Band to use with JimBeam. L, UHF or S")] = "L",
+    corr_type: Annotated[
+        Literal["linear", "circular"],
+        typer.Option(
+            help="Correlation type",
+        ),
+    ] = "linear",
+    band: Annotated[
+        str,
+        typer.Option(
+            help="Band to use with JimBeam. L, UHF or S",
+        ),
+    ] = "L",
     deselect_bands: Annotated[
-        str | None, typer.Option(help="Optional bands to select. Has to be passed in as a comma separated string")
+        ListInt | None,
+        typer.Option(
+            parser=parse_list_int,
+            help="Optional bands to discard from the fit.",
+        ),
     ] = None,
+    backend: Annotated[
+        Literal["auto", "native", "apptainer", "singularity", "docker", "podman"],
+        typer.Option(
+            help="Execution backend.",
+        ),
+        StimelaMeta(
+            skip=True,
+        ),
+    ] = "auto",
+    always_pull_images: Annotated[
+        bool,
+        typer.Option(
+            help="Always pull container images, even if cached locally.",
+        ),
+        StimelaMeta(
+            skip=True,
+        ),
+    ] = False,
 ):
     """
-    Fit spectral index models to image cubes with optional convolution and primary beam correction.
+    Fit spectral index map.
     """
-    # Lazy import the core implementation
-    from spimple.core.spifit import spifit as spifit_core
+    if backend == "native" or backend == "auto":
+        try:
+            # Pre-flight must_exist for remote URIs before dispatching.
+            from hip_cargo.utils.runner import preflight_remote_must_exist  # noqa: E402
 
-    # Parse channel_freqs if provided as comma-separated string
-    channel_freqs_list = None
-    if channel_freqs is not None:
-        channel_freqs_list = [float(x.strip()) for x in channel_freqs.split(",")]
+            preflight_remote_must_exist(
+                spifit,
+                dict(
+                    images=images,
+                    output_filename=output_filename,
+                    residual=residual,
+                    psf_pars=psf_pars,
+                    circ_psf=circ_psf,
+                    threshold=threshold,
+                    max_dr=max_dr,
+                    nthreads=nthreads,
+                    pb_min=pb_min,
+                    products=products,
+                    padding_frac=padding_frac,
+                    dont_convolve=dont_convolve,
+                    channel_weights_keyword=channel_weights_keyword,
+                    channel_freqs=channel_freqs,
+                    ref_freq=ref_freq,
+                    out_dtype=out_dtype,
+                    add_convolved_residuals=add_convolved_residuals,
+                    ms=ms,
+                    beam_model=beam_model,
+                    sparsify_time=sparsify_time,
+                    corr_type=corr_type,
+                    band=band,
+                    deselect_bands=deselect_bands,
+                ),
+            )
 
-    # Parse deselect_bands if provided as comma-separated string
-    deselect_bands_list = None
-    if deselect_bands is not None:
-        deselect_bands_list = [int(x.strip()) for x in deselect_bands.split(",")]
+            # Lazy import the core implementation
+            from spimple.core.spifit import spifit as spifit_core  # noqa: E402
 
-    # Convert Path types to strings for core function
-    ms_str = str(ms) if ms is not None else None
-    beam_model_str = str(beam_model) if beam_model is not None else None
-    output_filename_str = str(output_filename)
+            # Call the core function with all parameters
+            spifit_core(
+                images,
+                output_filename,
+                residual=residual,
+                psf_pars=psf_pars,
+                circ_psf=circ_psf,
+                threshold=threshold,
+                max_dr=max_dr,
+                nthreads=nthreads,
+                pb_min=pb_min,
+                products=products,
+                padding_frac=padding_frac,
+                dont_convolve=dont_convolve,
+                channel_weights_keyword=channel_weights_keyword,
+                channel_freqs=channel_freqs,
+                ref_freq=ref_freq,
+                out_dtype=out_dtype,
+                add_convolved_residuals=add_convolved_residuals,
+                ms=ms,
+                beam_model=beam_model,
+                sparsify_time=sparsify_time,
+                corr_type=corr_type,
+                band=band,
+                deselect_bands=deselect_bands,
+            )
+            return
+        except ImportError:
+            if backend == "native":
+                raise
 
-    # Call the core function with all parameters
-    spifit_core(
+    # Resolve container image from installed package metadata
+    from hip_cargo.utils.config import get_container_image  # noqa: E402
+    from hip_cargo.utils.runner import run_in_container  # noqa: E402
+
+    image = get_container_image("spimple")
+    if image is None:
+        raise RuntimeError("No Container URL in spimple metadata.")
+
+    run_in_container(
+        spifit,
+        dict(
+            images=images,
+            output_filename=output_filename,
+            residual=residual,
+            psf_pars=psf_pars,
+            circ_psf=circ_psf,
+            threshold=threshold,
+            max_dr=max_dr,
+            nthreads=nthreads,
+            pb_min=pb_min,
+            products=products,
+            padding_frac=padding_frac,
+            dont_convolve=dont_convolve,
+            channel_weights_keyword=channel_weights_keyword,
+            channel_freqs=channel_freqs,
+            ref_freq=ref_freq,
+            out_dtype=out_dtype,
+            add_convolved_residuals=add_convolved_residuals,
+            ms=ms,
+            beam_model=beam_model,
+            sparsify_time=sparsify_time,
+            corr_type=corr_type,
+            band=band,
+            deselect_bands=deselect_bands,
+        ),
         image=image,
-        output_filename=output_filename_str,
-        residual=residual,
-        psf_pars=psf_pars,
-        circ_psf=circ_psf,
-        threshold=threshold,
-        maxDR=maxDR,
-        nthreads=nthreads,
-        pfb_min=pfb_min,
-        products=products,
-        padding_frac=padding_frac,
-        dont_convolve=dont_convolve,
-        channel_weights_keyword=channel_weights_keyword,
-        channel_freqs=channel_freqs_list,
-        ref_freq=ref_freq,
-        out_dtype=out_dtype,
-        add_convolved_residuals=add_convolved_residuals,
-        ms=[ms_str] if ms_str is not None else None,
-        beam_model=beam_model_str,
-        sparsify_time=sparsify_time,
-        corr_type=corr_type,
-        band=band,
-        deselect_bands=deselect_bands_list,
+        backend=backend,
+        always_pull_images=always_pull_images,
     )

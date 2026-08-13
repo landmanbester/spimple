@@ -14,14 +14,14 @@ from spimple.core.binterp import binterp
 def test_requires_a_beam_model(image_cube, tmp_path):
     """No beam model means nothing to interpolate; that must not pass silently."""
     with pytest.raises((ValueError, TypeError, AttributeError)):
-        binterp(image=[image_cube], output_filename=str(tmp_path / "pb.fits"), nthreads=1)
+        binterp(images=[image_cube], output_filename=str(tmp_path / "pb.fits"), nthreads=1)
 
 
 def test_rejects_unknown_corr_type(image_cube, tmp_path):
     """corr_type is validated before any beam file is touched."""
     with pytest.raises(KeyError, match="Unknown corr_type"):
         binterp(
-            image=[image_cube],
+            images=[image_cube],
             output_filename=str(tmp_path / "pb.fits"),
             beam_model=str(tmp_path / "nonexistent_beam"),
             corr_type="elliptical",

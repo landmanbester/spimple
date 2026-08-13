@@ -13,7 +13,7 @@ log = get_logger("BINTERP")
 
 
 def binterp(
-    image: list[str],
+    images: list[str],
     output_filename: str,
     ms: list[str] | None = None,
     field: int = 0,
@@ -34,13 +34,13 @@ def binterp(
     """
     log_options(log, **locals())
 
-    image = expand_image_patterns(image)
+    images = expand_image_patterns(images)
 
     if not nthreads:
         nthreads = multiprocessing.cpu_count()
 
     # get coord info
-    hdr = fits.getheader(image[0])
+    hdr = fits.getheader(images[0])
     l_coord, ref_l = data_from_header(hdr, axis=1)
     l_coord -= ref_l
     m_coord, ref_m = data_from_header(hdr, axis=2)
