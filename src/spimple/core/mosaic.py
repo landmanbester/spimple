@@ -122,7 +122,7 @@ def mosaic(
             log.info("Conjugate gradient completed after %s iterations for freq = %s", info, freq)
             c = np.nonzero(ufreqs == freq)[0]
             outim[c] = image
-            outwgt[c] = outwgt
+            outwgt[c] = weight
 
     # Create output header
     cell_x = np.abs(ref_wcs.wcs.cdelt[0])
