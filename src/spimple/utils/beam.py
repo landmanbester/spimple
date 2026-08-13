@@ -148,7 +148,7 @@ def make_power_beam(lm_source, freqs, use_dask, *, beam_model, corr_type, nthrea
     Returns:
         Tuple containing the beam amplitude cube, spatial extents, and beam frequencies.
     """
-    paths = list(Path(beam_model).parent.glob(Path(beam_model).name + "**_**.fits"))
+    paths = list(Path(beam_model).parent.glob(Path(beam_model).name + "*_*.fits"))
     beam_hdr = None
     if corr_type == "linear":
         corr1 = "XX"

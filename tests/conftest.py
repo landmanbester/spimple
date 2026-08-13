@@ -101,6 +101,12 @@ def _write(path, data, hdr) -> str:
 
 
 @pytest.fixture(scope="session")
+def true_alpha():
+    """The spectral index injected into the fixture cubes."""
+    return TRUE_ALPHA
+
+
+@pytest.fixture(scope="session")
 def beam_params():
     """(emaj, emin, pa) in degrees, coarser than every channel's native beam."""
     return (8.0 * CELL_DEG, 6.4 * CELL_DEG, 0.0)
@@ -124,9 +130,14 @@ def image_cube_ctype3(tmp_path_factory):
 
 @pytest.fixture(scope="session")
 def residual_cube(tmp_path_factory):
-    """Noise-only residual on image_cube's grid, for threshold determination."""
+    """Noise-only residual on image_cube's grid, for threshold determination.
+
+    Carries WSCVWSUM because spifit derives its per-band weights from that
+    header keyword when a residual is supplied (core/spifit.py).
+    """
     path = tmp_path_factory.mktemp("fits") / "residual.fits"
     hdr = _add_per_channel_beams(_base_header(freq_axis=4))
+    hdr["WSCVWSUM"] = 1.0
     rng = np.random.default_rng(7)
     noise = rng.normal(scale=1e-3, size=(NCHAN, NPIX, NPIX)).astype(np.float32)
     return _write(path, _shape_for(noise, 4), hdr)

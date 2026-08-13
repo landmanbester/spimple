@@ -58,17 +58,11 @@ def mosaic(
 
     # project images
     log.info("Generating reference header")
-    if isinstance(images, str):
-        image_list = sorted(Path().glob(images))
-    else:
-        image_list = []
-        for img in images:
-            imgs = sorted(Path().glob(img))
-            if not imgs:
-                raise RuntimeError(f"Nothing found at {img}")
-            image_list.extend(imgs)
-
-    ref_wcs, ufreqs, out_names = mosaic_info(image_list, output_filename)
+    # `images` was already resolved by expand_image_patterns above: globs are
+    # expanded, entries de-duplicated and sorted, and a pattern matching nothing
+    # has already raised. Re-globbing here would additionally break on absolute
+    # paths, since Path().glob rejects non-relative patterns.
+    ref_wcs, ufreqs, out_names = mosaic_info(images, output_filename)
 
     nyo, nxo = ref_wcs.array_shape
     nchano = ufreqs.size
@@ -87,7 +81,7 @@ def mosaic(
     if do_project:
         log.info("Projecting images onto common wcs")
         tasks = []
-        for imnum, im in enumerate(image_list):
+        for imnum, im in enumerate(images):
             fut = project.remote(im, imnum, ref_wcs, beam_model, output_filename)
             tasks.append(fut)
 
