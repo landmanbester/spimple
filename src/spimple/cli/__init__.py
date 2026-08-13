@@ -31,3 +31,7 @@ app.command(name="binterp")(binterp)
 from spimple.cli.mosaic import mosaic  # noqa: E402
 
 app.command(name="mosaic")(mosaic)
+
+from spimple.cli.init import init  # noqa: E402
+
+app.command(name="init")(init)

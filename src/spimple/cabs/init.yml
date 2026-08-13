@@ -1,0 +1,117 @@
+cabs:
+  init:
+    flavour: python
+    command: spimple.core.init.init
+    name: init
+    info:
+      Ingest FITS images into a pfb-imaging style datatree
+    policies:
+      pass_missing_as_none: true
+    image: ghcr.io/landmanbester/spimple:latest
+    inputs:
+      images:
+        info:
+          List of FITS model or restored image files to ingest
+        dtype: List[str]
+        required: true
+        policies:
+          positional: true
+      output-filename:
+        info:
+          Basename of the output datatree store
+        dtype: File
+        required: true
+        policies:
+          positional: true
+      residual:
+        info:
+          List of FITS residual files matching the images
+        dtype: Optional[List[str]]
+      psf-pars:
+        info:
+          Target resolution as emaj emin pa in degrees.
+          By default the lowest resolution of the inputs is used
+        dtype: Optional[Tuple[float, float, float]]
+      circ-psf:
+        info:
+          Force a circular target beam
+        dtype: bool
+        default: false
+      dilate:
+        info:
+          Safety factor applied when the target resolution is derived from the inputs
+        dtype: float
+        default: 1.05
+      beam-model:
+        info:
+          Primary beam to apply.
+          Use JimBeam, a bds zarr store or a FITS cube
+        dtype: Optional[File]
+      band:
+        info:
+          Band to use with JimBeam.
+          L, UHF or S
+        choices:
+        - L
+        - UHF
+        - S
+        default: L
+      pb-min:
+        info:
+          Beam floor below which the intrinsic image is zeroed
+        dtype: float
+        default: 0.15
+      padding-frac:
+        info:
+          Padding used for the FFT based convolution
+        dtype: float
+        default: 0.5
+      products:
+        info:
+          Restored products to store.
+          a is apparent.
+          i is intrinsic.
+          k is mixed
+        default: aik
+      channel-weights-keyword:
+        info:
+          Header keyword supplying the per band weight sum
+        default: WSCVWSUM
+      freq-tol:
+        info:
+          Frequencies within this many Hz are treated as one band
+        dtype: Optional[float]
+      fits-outputs:
+        info:
+          Products to render as FITS.
+          Lowercase is MFS and uppercase is a cube
+        default: ''
+      fits-output-folder:
+        info:
+          Folder the rendered FITS are written to
+        dtype: Optional[Directory]
+      overwrite:
+        info:
+          Replace an existing datatree store
+        dtype: bool
+        default: false
+      out-dtype:
+        info:
+          Data type of output.
+          Default is single precision
+        default: f4
+      nthreads:
+        info:
+          Number of threads to use per worker
+        dtype: Optional[int]
+      nworkers:
+        info:
+          Number of workers to use for parallel processing
+        dtype: int
+        default: 1
+    outputs:
+      datatree:
+        dtype: Directory
+        info:
+          Datatree store consumed by spifit and mosaic.
+        implicit: '{current.output-filename}_I.dt'

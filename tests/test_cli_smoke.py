@@ -5,7 +5,7 @@ from typer.testing import CliRunner
 
 from spimple.cli import app
 
-COMMANDS = ["spifit", "imconv", "binterp", "mosaic"]
+COMMANDS = ["init", "spifit", "imconv", "binterp", "mosaic"]
 
 runner = CliRunner()
 
@@ -21,3 +21,14 @@ def test_group_help():
 def test_command_help(command):
     result = runner.invoke(app, [command, "--help"])
     assert result.exit_code == 0
+
+
+def test_init_help_lists_the_key_options(monkeypatch):
+    # rich truncates option names to the terminal width, so widen it or
+    # --output-filename renders as --output-filen...
+    monkeypatch.setenv("COLUMNS", "200")
+    result = runner.invoke(app, ["init", "--help"])
+
+    assert result.exit_code == 0
+    for flag in ("--images", "--output-filename", "--psf-pars", "--beam-model", "--nworkers"):
+        assert flag in result.stdout
