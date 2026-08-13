@@ -32,16 +32,19 @@ def Gaussian2D(xin, yin, GaussPar=(1.0, 1.0, 0.0), normalise=True, nsigma=5):
     R = np.array([[np.sin(PA), -np.cos(PA)], [np.cos(PA), np.sin(PA)]])
     A = np.dot(np.dot(R.T, A), R)
     sOut = xin.shape
-    # only compute the result out to 5 * emaj
-    extent = (nsigma * Smaj) ** 2
+    # the docstring's contract: nsigma standard deviations of the major axis
+    sigma_maj = Smaj / (2 * np.sqrt(2 * np.log(2)))
+    extent = (nsigma * sigma_maj) ** 2
     xflat = xin.squeeze()
     yflat = yin.squeeze()
     idx, idy = np.where(xflat**2 + yflat**2 <= extent)
     x = np.array([xflat[idx, idy].ravel(), yflat[idx, idy].ravel()])
     R = np.einsum("nb,bc,cn->n", x.T, A, x)
-    # need to adjust for the fact that GaussPar corresponds to FWHM
+    # GaussPar is FWHM: a Gaussian with FWHM S needs exp(-4 ln2 x^2 / S^2),
+    # i.e. the coefficient is 0.5 * fwhm_conv**2, not fwhm_conv. The previous
+    # form made every kernel 8.51% too wide.
     fwhm_conv = 2 * np.sqrt(2 * np.log(2))
-    tmp = np.exp(-fwhm_conv * R)
+    tmp = np.exp(-0.5 * fwhm_conv**2 * R)
     gausskern = np.zeros(xflat.shape, dtype=np.float64)
     gausskern[idx, idy] = tmp
 
