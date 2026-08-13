@@ -217,16 +217,19 @@ def spifit(
                 beam_image[v] = beam.I(xx, yy, freqs[v] / 1e6)  # freqs in MHz
 
         else:
-            # Note: interpolate_beam expects an opts object - need to create compatible structure
-            class BeamOpts:
-                pass
-
-            beam_opts = BeamOpts()
-            beam_opts.beam_model = beam_model
-            beam_opts.ms = ms
-            beam_opts.sparsify_time = sparsify_time
-            beam_opts.corr_type = corr_type
-            beam_image = interpolate_beam(xx, yy, freqs, beam_opts)
+            # field=0: spifit has no --field option; extract_dde_info previously read
+            # opts.field off a BeamOpts that never set it, raising AttributeError.
+            beam_image = interpolate_beam(
+                xx,
+                yy,
+                freqs,
+                beam_model=beam_model,
+                ms=ms,
+                field=0,
+                sparsify_time=sparsify_time,
+                corr_type=corr_type,
+                nthreads=nthreads,
+            )
 
         if "b" in products:
             name = outfile + ".power_beam.fits"

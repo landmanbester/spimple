@@ -21,12 +21,12 @@ def _unflagged_counts(flags, time_idx, out):
     return out
 
 
-def extract_dde_info(opts, freqs):
+def extract_dde_info(freqs, *, ms=None, field=0, sparsify_time=10):
     """
     Extracts parallactic angles, antenna scaling, pointing errors,
     and unflagged data counts for beam interpolation.
 
-    If measurement set files are provided in `opts.ms`, computes these
+    If measurement set files are provided in `ms`, computes these
     quantities from the data, ensuring consistency of antenna positions
     and phase centers across sets. Otherwise, returns default arrays
     suitable for beam interpolation.
@@ -41,18 +41,18 @@ def extract_dde_info(opts, freqs):
     """
     # get ms info required to compute paralactic angles and weighted sum
     nband = freqs.size
-    if opts.ms is not None:
+    if ms is not None:
         # Fixed: Eliminate None initialization pattern to help mypy type inference
         utimes_list = []
         unflag_counts_list = []
-        ms_list = list(opts.ms)
+        ms_list = list(ms)
 
         # Get reference values from first MS
         first_ants = xds_from_table(ms_list[0] + "::ANTENNA").compute()
         ant_pos = first_ants[0]["POSITION"].data
 
         first_field = xds_from_table(ms_list[0] + "::FIELD")[0].compute()
-        phase_dir = first_field["PHASE_DIR"][opts.field].data.squeeze()
+        phase_dir = first_field["PHASE_DIR"][field].data.squeeze()
 
         # Process all MS files (including the first one for data extraction)
         for ms_name in ms_list:
@@ -66,18 +66,18 @@ def extract_dde_info(opts, freqs):
                     raise ValueError(msg)
 
                 # get phase center for field and check consistency
-                field = xds_from_table(ms_name + "::FIELD")[0].compute()
-                tmp = field["PHASE_DIR"][opts.field].data.squeeze()
+                field_ds = xds_from_table(ms_name + "::FIELD")[0].compute()
+                tmp = field_ds["PHASE_DIR"][field].data.squeeze()
                 if not np.array_equal(phase_dir, tmp):
                     raise ValueError("Phase direction not the same across measurement sets")
 
             # get unique times and count flags
-            xds = xds_from_ms(ms_name, columns=["TIME", "FLAG_ROW"], group_cols=["FIELD_ID"])[opts.field]
+            xds = xds_from_ms(ms_name, columns=["TIME", "FLAG_ROW"], group_cols=["FIELD_ID"])[field]
             utime, time_idx = np.unique(xds.TIME.data.compute(), return_index=True)
             ntime = utime.size
             # extract subset of times
-            if opts.sparsify_time > 1:
-                I = np.arange(0, ntime, opts.sparsify_time)
+            if sparsify_time > 1:
+                I = np.arange(0, ntime, sparsify_time)
                 utime = utime[I]
                 time_idx = time_idx[I]
                 ntime = utime.size
@@ -126,7 +126,7 @@ def extract_dde_info(opts, freqs):
     return (parangles, ant_scale, point_errs, unflag_counts, False)
 
 
-def make_power_beam(opts, lm_source, freqs, use_dask):
+def make_power_beam(lm_source, freqs, use_dask, *, beam_model, corr_type, nthreads=None):  # noqa: ARG001
     """
     Loads and constructs a power beam cube from FITS beam model files for interpolation.
 
@@ -138,20 +138,22 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     Dask arrays or NumPy arrays depending on the `use_dask` flag.
 
     Args:
-        opts: Options object containing beam model pattern and correlation type.
         lm_source: Array of source direction cosines for spatial coverage validation.
         freqs: Array of frequencies to check against beam model coverage.
         use_dask: If True, returns Dask arrays; otherwise, returns NumPy arrays.
+        beam_model: Beam model FITS file pattern.
+        corr_type: Correlation type, either "linear" or "circular".
+        nthreads: Unused here; accepted for signature parity with interpolate_beam.
 
     Returns:
         Tuple containing the beam amplitude cube, spatial extents, and beam frequencies.
     """
-    paths = list(Path(opts.beam_model).parent.glob(Path(opts.beam_model).name + "**_**.fits"))
+    paths = list(Path(beam_model).parent.glob(Path(beam_model).name + "**_**.fits"))
     beam_hdr = None
-    if opts.corr_type == "linear":
+    if corr_type == "linear":
         corr1 = "XX"
         corr2 = "YY"
-    elif opts.corr_type == "circular":
+    elif corr_type == "circular":
         corr1 = "LL"
         corr2 = "RR"
     else:
@@ -231,11 +233,22 @@ def make_power_beam(opts, lm_source, freqs, use_dask):
     return beam_amp, beam_extents, bfreqs
 
 
-def interpolate_beam(ll, mm, freqs, opts):
+def interpolate_beam(
+    ll,
+    mm,
+    freqs,
+    *,
+    beam_model,
+    ms=None,
+    field=0,
+    sparsify_time=10,
+    corr_type="linear",
+    nthreads=None,
+):
     """
     Interpolates the beam model to specified image coordinates and frequencies.
 
-    If measurement set (MS) data is provided in the options, computes a time-averaged
+    If measurement set (MS) data is provided, computes a time-averaged
     beam using direction-dependent effects (DDE) such as parallactic angle, antenna
     scaling, and pointing errors. Supports both Dask-based and NumPy-based
     interpolation depending on the workflow. Returns the interpolated beam cube
@@ -245,17 +258,25 @@ def interpolate_beam(ll, mm, freqs, opts):
         ll: 2D array of l (direction cosine) coordinates for the image grid.
         mm: 2D array of m (direction cosine) coordinates for the image grid.
         freqs: 1D array of frequencies at which to interpolate the beam.
-        opts: Options object containing beam model paths, MS information, and
-        processing parameters.
+        beam_model: Beam model FITS file pattern.
+        ms: Measurement set(s) to derive DDE information from, if any.
+        field: Field ID to use when reading `ms`.
+        sparsify_time: Subsample every `sparsify_time`-th unique time.
+        corr_type: Correlation type, either "linear" or "circular".
+        nthreads: Number of threads/chunks to use for the Dask-based path.
 
     Returns:
         A NumPy array of the interpolated beam, with shape (nfreq, *ll.shape).
     """
     nband = freqs.size
-    parangles, ant_scale, point_errs, unflag_counts, use_dask = extract_dde_info(opts, freqs)
+    parangles, ant_scale, point_errs, unflag_counts, use_dask = extract_dde_info(
+        freqs, ms=ms, field=field, sparsify_time=sparsify_time
+    )
 
     lm_source = np.vstack((ll.ravel(), mm.ravel())).T
-    beam_amp, beam_extents, bfreqs = make_power_beam(opts, lm_source, freqs, use_dask)
+    beam_amp, beam_extents, bfreqs = make_power_beam(
+        lm_source, freqs, use_dask, beam_model=beam_model, corr_type=corr_type, nthreads=nthreads
+    )
 
     # interpolate beam
     if use_dask:
@@ -265,7 +286,7 @@ def interpolate_beam(ll, mm, freqs, opts):
         freqs = da.from_array(freqs, chunks=freqs.shape)
         # compute nthreads images at a time to avoid memory errors
         ntimes = parangles.shape[0]
-        I = np.arange(0, ntimes, opts.nthreads)
+        I = np.arange(0, ntimes, nthreads)
         nchunks = I.size
         I = np.append(I, ntimes)
         beam_image = np.zeros((ll.size, 1, nband), dtype=beam_amp.dtype)

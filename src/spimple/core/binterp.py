@@ -56,17 +56,17 @@ def binterp(
     xx, yy = np.meshgrid(l_coord, m_coord, indexing="ij")
 
     # interpolate primary beam to fits header and optionally average over time
-    # Note: interpolate_beam expects an opts object - need to create compatible structure
-    class BeamOpts:
-        pass
-
-    beam_opts = BeamOpts()
-    beam_opts.beam_model = beam_model
-    beam_opts.ms = ms
-    beam_opts.field = field
-    beam_opts.sparsify_time = sparsify_time
-    beam_opts.corr_type = corr_type
-    beam_image = interpolate_beam(xx, yy, freqs, beam_opts)
+    beam_image = interpolate_beam(
+        xx,
+        yy,
+        freqs,
+        beam_model=beam_model,
+        ms=ms,
+        field=field,
+        sparsify_time=sparsify_time,
+        corr_type=corr_type,
+        nthreads=nthreads,
+    )
 
     # new header for cubes if ref_freqs or freq_axis differs
     new_hdr = set_header_info(hdr, ref_freq, freq_axis)
