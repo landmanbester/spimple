@@ -123,6 +123,90 @@ def test_init_renders_requested_fits(image_cube, residual_cube, tmp_path):
     assert fits.getdata(str(written[0])).ndim == 4
 
 
-def test_init_rejects_a_beam_model_until_task_12(image_cube, tmp_path):
-    with pytest.raises(NotImplementedError, match="beam"):
-        init([image_cube], str(tmp_path / "out"), beam_model="JimBeam", overwrite=True)
+def test_init_writes_one_partition_per_pointing(two_pointing_fits, tmp_path):
+    from spimple.utils.datatree import partition_nodes
+
+    models, residuals = two_pointing_fits
+    out = str(tmp_path / "out")
+    init(models, out, residual=residuals, overwrite=True)
+
+    dt = open_store(store_name(out, "I"))
+    node = band_nodes(dt)[0]
+
+    assert partition_nodes(dt, node) == ["part0000", "part0001"]
+
+
+def test_init_leaves_the_band_node_bare_for_multiple_partitions(two_pointing_fits, tmp_path):
+    """Combining is mosaic's job; init must not guess a band-level image."""
+    models, residuals = two_pointing_fits
+    out = str(tmp_path / "out")
+    init(models, out, residual=residuals, overwrite=True)
+
+    dt = open_store(store_name(out, "I"))
+    ds = dt[band_nodes(dt)[0]].ds
+
+    assert "IMAGE" not in ds
+    assert "PSFPARSF" in ds
+    assert "cell_rad" in ds.attrs
+
+
+def test_init_puts_every_partition_on_the_union_grid(two_pointing_fits, tmp_path):
+    from spimple.utils.datatree import partition_nodes
+
+    models, residuals = two_pointing_fits
+    out = str(tmp_path / "out")
+    init(models, out, residual=residuals, overwrite=True)
+
+    dt = open_store(store_name(out, "I"))
+    node = band_nodes(dt)[0]
+    shapes = {dt[f"{node}/{p}"].ds.IMAGE.shape for p in partition_nodes(dt, node)}
+
+    assert len(shapes) == 1
+    assert dt.attrs["nx"] > 64  # wider than one pointing
+
+
+def test_init_masks_each_partition_to_its_own_footprint(two_pointing_fits, tmp_path):
+    from spimple.utils.datatree import partition_nodes
+
+    models, residuals = two_pointing_fits
+    out = str(tmp_path / "out")
+    init(models, out, residual=residuals, overwrite=True)
+
+    dt = open_store(store_name(out, "I"))
+    node = band_nodes(dt)[0]
+    masks = [dt[f"{node}/{p}"].ds.MASK.values[0] for p in partition_nodes(dt, node)]
+
+    assert not masks[0].all()
+    assert (masks[0] & masks[1]).any(), "the pointings should overlap"
+    assert not (masks[0] & masks[1]).all(), "the pointings should not coincide"
+
+
+def test_init_applies_a_jimbeam_to_each_partition(image_cube, residual_cube, tmp_path):
+    pytest.importorskip("katbeam")
+    out = str(tmp_path / "out")
+    init([image_cube], out, residual=[residual_cube], beam_model="JimBeam", overwrite=True)
+
+    dt = open_store(store_name(out, "I"))
+    ds = dt[band_nodes(dt)[0]].ds
+
+    assert ds.BEAM.values.max() <= 1.0 + 1e-6
+    assert ds.BEAM.values.min() < 1.0
+
+
+def test_init_uses_each_partition_s_own_pointing_for_the_beam(two_pointing_fits, tmp_path):
+    """Beams are evaluated around each partition's phase centre, not a shared one."""
+    pytest.importorskip("katbeam")
+    from spimple.utils.datatree import partition_nodes
+
+    models, residuals = two_pointing_fits
+    out = str(tmp_path / "out")
+    init(models, out, residual=residuals, beam_model="JimBeam", overwrite=True)
+
+    dt = open_store(store_name(out, "I"))
+    node = band_nodes(dt)[0]
+    peaks = []
+    for part in partition_nodes(dt, node):
+        beam = dt[f"{node}/{part}"].ds.BEAM.values[0]
+        peaks.append(np.unravel_index(np.argmax(beam), beam.shape))
+
+    assert peaks[0] != peaks[1], "both beams peak at the same pixel; the pointing was ignored"

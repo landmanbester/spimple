@@ -14,7 +14,9 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 from astropy.time import Time
+from astropy.wcs import WCS
 
+from spimple.utils.beamsource import beam_for_grid
 from spimple.utils.datatree import (
     PRODUCT_VARS,
     band_node_name,
@@ -25,6 +27,7 @@ from spimple.utils.datatree import (
 )
 from spimple.utils.fits import data_from_header, expand_image_patterns, freq_axis_of, load_cube
 from spimple.utils.logging import get_logger, log_options
+from spimple.utils.project import reproject_cube, union_wcs
 from spimple.utils.render import dt2fits
 from spimple.utils.restoration import restore_products
 
@@ -268,25 +271,33 @@ def init(
         nthreads = multiprocessing.cpu_count()
 
     groups = group_partitions(images)
-    if len(groups) > 1:
-        raise NotImplementedError(f"{len(groups)} partitions found; multi-pointing ingest is not implemented yet")
-    if beam_model is not None:
-        raise NotImplementedError("beam models are not implemented yet; run without beam-model")
 
-    part_paths = groups[0][1]
-    hdr = fits.getheader(part_paths[0])
-    corr = stokes_labels(hdr)
+    headers = [fits.getheader(paths[0]) for _, paths in groups]
+    ref_hdr = headers[0]
+    corr = stokes_labels(ref_hdr)
     ncorr = len(corr)
-    cell_deg = abs(float(hdr["CDELT1"]))
+    cell_deg = abs(float(ref_hdr["CDELT1"]))
     cell_rad = np.deg2rad(cell_deg)
-    ny, nx = int(hdr["NAXIS2"]), int(hdr["NAXIS1"])
     product = "".join(corr)
 
-    nominal, mapping = assign_bands([frequencies_of(part_paths)], freq_tol)
+    target_wcs, (ny, nx) = union_wcs(headers)
+    ra = np.deg2rad(float(target_wcs.wcs.crval[0]))
+    dec = np.deg2rad(float(target_wcs.wcs.crval[1]))
+    log.info("Union grid is %d by %d pixels over %d partitions", ny, nx, len(groups))
+
+    residual_groups = group_partitions(residual) if residual else None
+    if residual_groups is not None and len(residual_groups) != len(groups):
+        raise ValueError(
+            f"{len(groups)} image partitions but {len(residual_groups)} residual partitions; "
+            "they must describe the same pointings"
+        )
+
+    freqs_per_partition = [frequencies_of(paths) for _, paths in groups]
+    nominal, mapping = assign_bands(freqs_per_partition, freq_tol)
     nband = nominal.size
 
-    psfparsn = psfpars_from_header(hdr, nband, ncorr, cell_deg)
-    target = resolve_target(psfparsn, psf_pars, circ_psf, dilate, cell_deg)
+    psfparsn = [psfpars_from_header(hdr, nband, ncorr, cell_deg) for hdr in headers]
+    target = resolve_target(np.concatenate(psfparsn, axis=0), psf_pars, circ_psf, dilate, cell_deg)
     log.info(
         "Target resolution %.3e deg by %.3e deg at %.3e deg",
         target[0, 0] * cell_deg,
@@ -302,88 +313,109 @@ def init(
             "product": product,
             "nband": int(nband),
             "ntime": 1,
-            "nx": nx,
-            "ny": ny,
+            "nx": int(nx),
+            "ny": int(ny),
             "cell_rad": cell_rad,
             "origin": "spimple-init",
         },
         overwrite=overwrite,
     )
 
-    beam = np.ones((ncorr, ny, nx), dtype=np.float64)
-    rhdr = fits.getheader(residual[0]) if residual else hdr
-    time_out = _time_out(hdr)
-    ra, dec = np.deg2rad(float(hdr["CRVAL1"])), np.deg2rad(float(hdr["CRVAL2"]))
     letters = tuple(k for k in ("a", "i", "k") if k in products)
+    single = len(groups) == 1
 
-    for bandid in range(nband):
-        chan = mapping[0].get(bandid)
-        if chan is None:
-            continue
-        model = _read_band(part_paths, bandid, chan)
-        if residual:
-            resid = _read_band(residual, bandid, chan)
-        else:
-            # no residual: the input is a restored image, so it carries the
-            # resolution and there is no separate model to convolve
-            resid = model
-            model = np.zeros_like(resid)
+    for pid, (_, paths) in enumerate(groups):
+        hdr = headers[pid]
+        part_wcs = WCS(hdr).celestial
+        part_shape = (int(hdr["NAXIS2"]), int(hdr["NAXIS1"]))
+        res_paths = residual_groups[pid][1] if residual_groups else None
+        rhdr = fits.getheader(res_paths[0]) if res_paths else hdr
+        band_ids = sorted(mapping[pid])
+        band_freqs = np.array([freqs_per_partition[pid][mapping[pid][b]] for b in band_ids], dtype=float)
+        beams = beam_for_grid(beam_model, band, band_freqs, part_wcs, part_shape, ncorr, nthreads=nthreads)
+        ra0 = np.deg2rad(float(hdr["CRVAL1"]))
+        dec0 = np.deg2rad(float(hdr["CRVAL2"]))
 
-        out = restore_products(
-            model,
-            resid,
-            beam,
-            target,
-            gausspari=psfparsn[bandid],
-            products=letters,
-            pb_min=pb_min,
-            nthreads=nthreads,
-            padding_frac=padding_frac,
-        )
+        for slot, bandid in enumerate(band_ids):
+            chan = mapping[pid][bandid]
+            model = _read_band(paths, bandid, chan)
+            if res_paths:
+                resid = _read_band(res_paths, bandid, chan)
+            else:
+                # no residual: the input is a restored image, so it carries the
+                # resolution and there is no separate model to convolve
+                resid = model
+                model = np.zeros_like(resid)
+            beam = beams[slot]
 
-        rms = np.array([float(np.std(resid[c])) for c in range(ncorr)])
-        if channel_weights_keyword in rhdr:
-            wsum = np.full(ncorr, float(rhdr[channel_weights_keyword]))
-        else:
-            wsum = np.where(rms > 0, 1.0 / np.maximum(rms, 1e-30) ** 2, 1.0)
+            out = restore_products(
+                model,
+                resid,
+                beam,
+                target,
+                gausspari=psfparsn[pid][bandid],
+                products=letters,
+                pb_min=pb_min,
+                nthreads=nthreads,
+                padding_frac=padding_frac,
+            )
 
-        data_vars = {PRODUCT_VARS[k]: (("corr", "y", "x"), out[k].astype(out_dtype)) for k in letters}
-        data_vars["BEAM"] = (("corr", "y", "x"), beam.astype(out_dtype))
-        data_vars["WSUM"] = (("corr",), wsum.astype(np.float64))
-        data_vars["RMS"] = (("corr",), rms.astype(np.float64))
-        data_vars["PSFPARSF"] = (("corr", "bpar"), target.astype(np.float64))
-        attrs = {
-            "bandid": int(bandid),
-            "timeid": 0,
-            "freq_out": float(nominal[bandid]),
-            "freq_nominal": float(nominal[bandid]),
-            "time_out": time_out,
-            "ra": ra,
-            "dec": dec,
-            "cell_rad": cell_rad,
-            "l0": 0.0,
-            "m0": 0.0,
-            "pb_min": float(pb_min),
-        }
-        coords = {"corr": corr, "bpar": BPAR}
-        node = band_node_name(bandid, 0)
-        # one partition: the band product IS the partition product, so write both
-        write_node(
-            url,
-            f"{node}/{partition_node_name(0)}",
-            {**data_vars, "MASK": (("corr", "y", "x"), np.ones((ncorr, ny, nx), dtype=bool))},
-            {
-                "field_name": field_name_for(part_paths, 0),
-                "ra0": ra,
-                "dec0": dec,
+            rms = np.array([float(np.std(resid[c])) for c in range(ncorr)])
+            if channel_weights_keyword in rhdr:
+                wsum = np.full(ncorr, float(rhdr[channel_weights_keyword]))
+            else:
+                wsum = np.where(rms > 0, 1.0 / np.maximum(rms, 1e-30) ** 2, 1.0)
+
+            # Convolve first, reproject second: the products are Jy/beam, which
+            # reproject_interp conserves. A Jy/pixel model would not survive it.
+            # The beam goes first so the footprint mask is defined even when
+            # products selects nothing.
+            pbeam, mask = reproject_cube(beam, part_wcs, target_wcs, (ny, nx))
+            pbeam[:, ~mask] = 0.0
+            projected = {k: reproject_cube(arr, part_wcs, target_wcs, (ny, nx))[0] for k, arr in out.items()}
+
+            data_vars = {PRODUCT_VARS[k]: (("corr", "y", "x"), projected[k].astype(out_dtype)) for k in letters}
+            data_vars["BEAM"] = (("corr", "y", "x"), pbeam.astype(out_dtype))
+            data_vars["WSUM"] = (("corr",), wsum.astype(np.float64))
+            data_vars["RMS"] = (("corr",), rms.astype(np.float64))
+            data_vars["PSFPARSF"] = (("corr", "bpar"), target.astype(np.float64))
+            coords = {"corr": corr, "bpar": BPAR}
+            node = band_node_name(bandid, 0)
+
+            write_node(
+                url,
+                f"{node}/{partition_node_name(pid)}",
+                {**data_vars, "MASK": (("corr", "y", "x"), np.repeat(mask[None], ncorr, axis=0))},
+                {
+                    "field_name": field_name_for(paths, pid),
+                    "ra0": ra0,
+                    "dec0": dec0,
+                    "freq_out": float(nominal[bandid]),
+                    "psfparsn": psfparsn[pid][bandid].tolist(),
+                    "beam_includes_n": False,
+                },
+                coords,
+            )
+            attrs = {
+                "bandid": int(bandid),
+                "timeid": 0,
                 "freq_out": float(nominal[bandid]),
-                "psfparsn": psfparsn[bandid].tolist(),
-                "beam_includes_n": False,
-            },
-            coords,
-        )
-        write_node(url, node, data_vars, attrs, coords)
-        log.info("Wrote band %d at %.4e Hz", bandid, nominal[bandid])
+                "freq_nominal": float(nominal[bandid]),
+                "time_out": _time_out(hdr),
+                "ra": ra,
+                "dec": dec,
+                "cell_rad": cell_rad,
+                "l0": 0.0,
+                "m0": 0.0,
+                "pb_min": float(pb_min),
+            }
+            if single:
+                # one pointing needs no mosaic step: the band product IS the
+                # partition product, so write it straight through
+                write_node(url, node, data_vars, attrs, coords)
+            else:
+                write_node(url, node, {"PSFPARSF": data_vars["PSFPARSF"]}, attrs, coords)
+        log.info("Wrote partition %d with %d bands", pid, len(band_ids))
 
     if fits_outputs:
         folder = fits_output_folder or str(Path(url).parent / "fits")

@@ -286,3 +286,27 @@ def fits_beam_cube_elliptical(tmp_path_factory):
     """Elongated along m, so a transposed read is detectable."""
     path = tmp_path_factory.mktemp("beam") / "beam_ell.fits"
     return _beam_fits(path, [1.0e9], 0.02, 0.06)
+
+
+@pytest.fixture(scope="session")
+def two_pointing_fits(tmp_path_factory):
+    """Two overlapping pointings sharing a channelisation.
+
+    Returns (model_paths, residual_paths). The pointings are offset in RA by a
+    quarter of the image, so they overlap over most of their area.
+    """
+    folder = tmp_path_factory.mktemp("pointings")
+    offsets = [0.0, NPIX // 4 * CELL_DEG]
+    models, residuals = [], []
+    rng = np.random.default_rng(21)
+    for pid, offset in enumerate(offsets):
+        for name, cube, out in (
+            ("model", _power_law_cube(TRUE_ALPHA, seed=42), models),
+            ("residual", rng.normal(scale=1e-3, size=(NCHAN, NPIX, NPIX)), residuals),
+        ):
+            hdr = _add_per_channel_beams(_base_header(freq_axis=4))
+            hdr["CRVAL1"] = 30.0 + offset
+            hdr["WSCVWSUM"] = 1.0 + pid
+            path = folder / f"field{pid}-{name}.fits"
+            out.append(_write(path, _shape_for(np.asarray(cube, dtype=np.float32), 4), hdr))
+    return models, residuals
