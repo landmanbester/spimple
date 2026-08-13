@@ -32,3 +32,13 @@ def test_init_help_lists_the_key_options(monkeypatch):
     assert result.exit_code == 0
     for flag in ("--images", "--output-filename", "--psf-pars", "--beam-model", "--nworkers"):
         assert flag in result.stdout
+
+
+def test_spifit_help_shows_the_store_and_flux_scale_options(monkeypatch):
+    monkeypatch.setenv("COLUMNS", "200")
+    result = runner.invoke(app, ["spifit", "--help"])
+
+    assert result.exit_code == 0
+    assert "--store" in result.stdout
+    assert "--flux-scale" in result.stdout
+    assert "--beam-model" not in result.stdout

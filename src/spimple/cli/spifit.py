@@ -3,39 +3,36 @@ from typing import Annotated, Literal, NewType
 
 import typer
 from hip_cargo import (
-    ListFloat,
     ListInt,
-    ListStr,
     StimelaMeta,
-    parse_list_float,
     parse_list_int,
-    parse_list_str,
     parse_upath,
     stimela_cab,
     stimela_output,
 )
 
+Directory = NewType("Directory", Path)
 File = NewType("File", Path)
 
 
 @stimela_cab(
     name="spifit",
-    info="Fit spectral index map.",
+    info="Fit a spectral index model to the band images of a datatree.",
     policies={"pass_missing_as_none": True},
 )
 @stimela_output(
     dtype="File",
     name="alpha-map",
     info="Fitted spectral index map, written when products contains 'a'.",
-    implicit="{current.output-filename}.alpha.fits",
+    implicit="{current.output-filename}_time0.alpha.fits",
 )
 def spifit(
-    images: Annotated[
-        ListStr,
+    store: Annotated[
+        Directory,
         typer.Option(
             ...,
-            parser=parse_list_str,
-            help="Images to process",
+            parser=parse_upath,
+            help="Datatree store to fit. Written by spimple init or by pfb-imaging",
         ),
     ],
     output_filename: Annotated[
@@ -43,152 +40,75 @@ def spifit(
         typer.Option(
             ...,
             parser=parse_upath,
-            help="Basename of output products",
+            help="Basename of the output FITS products",
         ),
     ],
-    residual: Annotated[
-        ListStr | None,
+    flux_scale: Annotated[
+        Literal["apparent", "intrinsic", "mixed"],
         typer.Option(
-            parser=parse_list_str,
-            help="Residual images matching the input images",
+            help="Flux scale to fit. Apparent uses BIMAGE. Intrinsic uses IMAGE. Mixed uses KIMAGE",
         ),
-    ] = None,
-    psf_pars: Annotated[
-        tuple[float, float, float] | None,
-        typer.Option(
-            help="PSF (beam) parameters matching FWHM of restoring beam specified as emaj emin pa. "
-            "Taken from the fits header by default.",
-        ),
-    ] = None,
-    circ_psf: Annotated[
-        bool,
-        typer.Option(
-            help="Flag to use circular restoring PSF (beam)",
-        ),
-    ] = False,
-    threshold: Annotated[
-        float,
-        typer.Option(
-            help="Multiple of the rms in the residual to threshold on. "
-            "Only components above threshold*rms will be fit.",
-        ),
-    ] = 10,
-    max_dr: Annotated[
-        float,
-        typer.Option(
-            help="Maximum dynamic range used to determine the threshold. Only used when residual is not available.",
-        ),
-    ] = 1000,
-    nthreads: Annotated[
-        int | None,
-        typer.Option(
-            help="Number of threads to use. Defaults to all",
-        ),
-    ] = None,
-    pb_min: Annotated[
-        float,
-        typer.Option(
-            help="Don't fit components where the primary beam is less than this",
-        ),
-    ] = 0.15,
+    ] = "apparent",
     products: Annotated[
         str,
         typer.Option(
-            help="Outputs to write, as a string of letters. "
+            help="Products to write, as a string of letters. "
             "a is the alpha map. "
             "e is the alpha error map. "
             "i is the I0 map. "
             "k is the I0 error map. "
-            "I is the cube reconstructed from alpha and I0. "
-            "c is the restoring beam used for convolution. "
-            "m is the convolved model. "
-            "r is the convolved residual. "
-            "b is the average power beam. "
-            "d is the difference between data and fitted model.",
+            "I is the reconstructed cube. "
+            "d is the difference between the data and the fit. "
+            "b is the average power beam.",
         ),
-    ] = "aeikIcmrbd",
-    padding_frac: Annotated[
+    ] = "aeikId",
+    threshold: Annotated[
         float,
         typer.Option(
-            help="Padding factor for FFT's.",
+            help="Multiple of the residual rms below which pixels are not fitted",
         ),
-    ] = 0.5,
-    dont_convolve: Annotated[
-        bool,
+    ] = 10.0,
+    max_dr: Annotated[
+        float,
         typer.Option(
-            help="Disable convolution with clean PSF (beam)",
+            help="Maximum dynamic range used to set the threshold when no rms is available",
         ),
-    ] = False,
-    channel_weights_keyword: Annotated[
-        str,
+    ] = 1000.0,
+    pb_min: Annotated[
+        float,
         typer.Option(
-            help="Header for channel weight",
+            help="Beam floor below which pixels are excluded from the fit",
         ),
-    ] = "WSCIMWG",
-    channel_freqs: Annotated[
-        ListFloat | None,
+    ] = 0.15,
+    deselect_bands: Annotated[
+        ListInt | None,
         typer.Option(
-            parser=parse_list_float,
-            help="Optional channel frequencies overriding the fits coordinates.",
+            parser=parse_list_int,
+            help="Band ids to exclude from the fit",
         ),
     ] = None,
     ref_freq: Annotated[
         float | None,
         typer.Option(
-            help="Optional reference frequency to overwrite default taken from fits",
+            help="Reference frequency in Hz. Defaults to the weighted mean of the band frequencies",
+        ),
+    ] = None,
+    timeid: Annotated[
+        int | None,
+        typer.Option(
+            help="Restrict the fit to one time id. Every time id is fitted by default",
         ),
     ] = None,
     out_dtype: Annotated[
         str,
         typer.Option(
-            help="dtype of output images",
+            help="Data type of output. Default is single precision",
         ),
     ] = "f4",
-    add_convolved_residuals: Annotated[
-        bool,
+    nthreads: Annotated[
+        int | None,
         typer.Option(
-            help="Flag to add the convolved residuals to the convolved model",
-        ),
-    ] = False,
-    ms: Annotated[
-        ListStr | None,
-        typer.Option(
-            parser=parse_list_str,
-            help="Optional measurement sets used to get the parallactic angle rotation.",
-        ),
-    ] = None,
-    beam_model: Annotated[
-        File | None,
-        typer.Option(
-            parser=parse_upath,
-            help="Beam model to use. "
-            "For fits files the expected pattern is path/to/beam_folder/name_corr_re.fits and its _im.fits pair. "
-            "JimBeam is also accepted, in which case the beam comes from katbeam.",
-        ),
-    ] = None,
-    sparsify_time: Annotated[
-        int,
-        typer.Option(
-            help="Subsample PA by this many integrations when computing PA during beam interpolation.",
-        ),
-    ] = 10,
-    corr_type: Annotated[
-        Literal["linear", "circular"],
-        typer.Option(
-            help="Correlation type",
-        ),
-    ] = "linear",
-    band: Annotated[
-        str,
-        typer.Option(
-            help="Band to use with JimBeam. L, UHF or S",
-        ),
-    ] = "L",
-    deselect_bands: Annotated[
-        ListInt | None,
-        typer.Option(
-            parser=parse_list_int,
-            help="Optional bands to discard from the fit.",
+            help="Number of threads to use per worker",
         ),
     ] = None,
     backend: Annotated[
@@ -211,7 +131,7 @@ def spifit(
     ] = False,
 ):
     """
-    Fit spectral index map.
+    Fit a spectral index model to the band images of a datatree.
     """
     if backend == "native" or backend == "auto":
         try:
@@ -221,29 +141,18 @@ def spifit(
             preflight_remote_must_exist(
                 spifit,
                 dict(
-                    images=images,
+                    store=store,
                     output_filename=output_filename,
-                    residual=residual,
-                    psf_pars=psf_pars,
-                    circ_psf=circ_psf,
+                    flux_scale=flux_scale,
+                    products=products,
                     threshold=threshold,
                     max_dr=max_dr,
-                    nthreads=nthreads,
                     pb_min=pb_min,
-                    products=products,
-                    padding_frac=padding_frac,
-                    dont_convolve=dont_convolve,
-                    channel_weights_keyword=channel_weights_keyword,
-                    channel_freqs=channel_freqs,
-                    ref_freq=ref_freq,
-                    out_dtype=out_dtype,
-                    add_convolved_residuals=add_convolved_residuals,
-                    ms=ms,
-                    beam_model=beam_model,
-                    sparsify_time=sparsify_time,
-                    corr_type=corr_type,
-                    band=band,
                     deselect_bands=deselect_bands,
+                    ref_freq=ref_freq,
+                    timeid=timeid,
+                    out_dtype=out_dtype,
+                    nthreads=nthreads,
                 ),
             )
 
@@ -252,29 +161,18 @@ def spifit(
 
             # Call the core function with all parameters
             spifit_core(
-                images,
+                store,
                 output_filename,
-                residual=residual,
-                psf_pars=psf_pars,
-                circ_psf=circ_psf,
+                flux_scale=flux_scale,
+                products=products,
                 threshold=threshold,
                 max_dr=max_dr,
-                nthreads=nthreads,
                 pb_min=pb_min,
-                products=products,
-                padding_frac=padding_frac,
-                dont_convolve=dont_convolve,
-                channel_weights_keyword=channel_weights_keyword,
-                channel_freqs=channel_freqs,
-                ref_freq=ref_freq,
-                out_dtype=out_dtype,
-                add_convolved_residuals=add_convolved_residuals,
-                ms=ms,
-                beam_model=beam_model,
-                sparsify_time=sparsify_time,
-                corr_type=corr_type,
-                band=band,
                 deselect_bands=deselect_bands,
+                ref_freq=ref_freq,
+                timeid=timeid,
+                out_dtype=out_dtype,
+                nthreads=nthreads,
             )
             return
         except ImportError:
@@ -292,29 +190,18 @@ def spifit(
     run_in_container(
         spifit,
         dict(
-            images=images,
+            store=store,
             output_filename=output_filename,
-            residual=residual,
-            psf_pars=psf_pars,
-            circ_psf=circ_psf,
+            flux_scale=flux_scale,
+            products=products,
             threshold=threshold,
             max_dr=max_dr,
-            nthreads=nthreads,
             pb_min=pb_min,
-            products=products,
-            padding_frac=padding_frac,
-            dont_convolve=dont_convolve,
-            channel_weights_keyword=channel_weights_keyword,
-            channel_freqs=channel_freqs,
-            ref_freq=ref_freq,
-            out_dtype=out_dtype,
-            add_convolved_residuals=add_convolved_residuals,
-            ms=ms,
-            beam_model=beam_model,
-            sparsify_time=sparsify_time,
-            corr_type=corr_type,
-            band=band,
             deselect_bands=deselect_bands,
+            ref_freq=ref_freq,
+            timeid=timeid,
+            out_dtype=out_dtype,
+            nthreads=nthreads,
         ),
         image=image,
         backend=backend,
