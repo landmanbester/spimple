@@ -131,7 +131,7 @@ def mosaic(
         (ra, dec),
         ufreqs,
         unit="Jy/beam",
-        GuassPar=None,
+        gausspar=None,
         ms_time=None,
         header=True,
         casambm=False,
