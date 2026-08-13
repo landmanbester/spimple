@@ -74,3 +74,50 @@ def test_gaussian2d_support_is_nsigma_standard_deviations():
     outside = int(6.0 * sigma)
     assert kern[c + inside, c] > 0.0
     assert kern[c + outside, c] == 0.0
+
+
+def _grids(nx, ny):
+    x = -(nx // 2) + np.arange(nx)
+    y = -(ny // 2) + np.arange(ny)
+    return np.meshgrid(x, y, indexing="ij")
+
+
+def test_convolve2gaussres_yx_order_matches_the_transposed_call():
+    """Convolving (n, y, x) with yx_order equals convolving its transpose without."""
+    nx, ny, nband = 48, 32, 3
+    xx, yy = _grids(nx, ny)
+    rng = np.random.default_rng(7)
+    xmajor = rng.normal(size=(nband, nx, ny))
+    yxmajor = xmajor.transpose(0, 2, 1).copy()
+    target = (6.0, 4.0, 0.4)
+
+    ref, ref_kern = convolve2gaussres(xmajor, xx, yy, target, 1)
+    out, out_kern = convolve2gaussres(yxmajor, xx, yy, target, 1, yx_order=True)
+
+    np.testing.assert_allclose(out, ref.transpose(0, 2, 1), atol=1e-12)
+    np.testing.assert_allclose(out_kern, ref_kern.transpose(0, 2, 1), atol=1e-12)
+
+
+def test_convolve2gaussres_accepts_a_target_per_plane():
+    """A (nplane, 3) gaussparf convolves each plane to its own resolution."""
+    nx, ny = 64, 64
+    xx, yy = _grids(nx, ny)
+    delta = np.zeros((2, nx, ny))
+    delta[:, nx // 2, ny // 2] = 1.0
+    targets = np.array([[8.0, 8.0, 0.0], [4.0, 4.0, 0.0]])
+
+    out, _ = convolve2gaussres(delta, xx, yy, targets, 1, norm_kernel=False)
+
+    for plane in range(targets.shape[0]):
+        expected = Gaussian2D(xx, yy, tuple(targets[plane]), normalise=False)
+        np.testing.assert_allclose(out[plane], expected, atol=1e-8)
+
+
+def test_convolve2gaussres_rejects_a_mismatched_per_plane_target():
+    nx, ny = 32, 32
+    xx, yy = _grids(nx, ny)
+    image = np.zeros((3, nx, ny))
+    targets = np.array([[8.0, 8.0, 0.0], [4.0, 4.0, 0.0]])
+
+    with pytest.raises(ValueError, match="gaussparf"):
+        convolve2gaussres(image, xx, yy, targets, 1)

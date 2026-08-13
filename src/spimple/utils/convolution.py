@@ -69,32 +69,56 @@ def get_padding_info(nx, ny, pfrac):
     return padding, unpad_x, unpad_y
 
 
-def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=0.5, norm_kernel=False):
+def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=0.5, norm_kernel=False, yx_order=False):
     """
     Convolves the image to a specified resolution.
 
     Parameters
     ----------
-    Image - (nband, nx, ny) array to convolve
-    xx/yy - coordinates on the grid in the same units as gaussparf.
-    gaussparf - tuple containing Gaussian parameters of desired resolution
-                (emaj, emin, pa).
-    gausspari - initial resolution . By default it is assumed that the image
+    image - (nband, nx, ny) array to convolve, or (nband, ny, nx) with yx_order.
+    xx/yy - coordinates on the grid in the same units as gaussparf. ALWAYS built
+            x-major, from nx then ny, whatever yx_order is.
+    gaussparf - Gaussian parameters of the desired resolution (emaj, emin, pa),
+                either shared by every plane as a (3,) tuple or per plane as a
+                (nband, 3) array.
+    gausspari - initial resolution. By default it is assumed that the image
                 is a clean component image with no associated resolution.
-                If beampari is specified, it must be a tuple containing gausspars
-                for each imaging band in the same format.
+                If specified, it must contain gausspars for each imaging band
+                in the same format.
     nthreads - number of threads to use for the FFT's.
     pfrac - padding used for the FFT based convolution. Will pad by pfrac/2 on
             both sides of image
+    norm_kernel - normalise the Gaussian kernel to have volume 1.
+    yx_order - set True for (Y, X)-ordered DataTree arrays. The convolution is
+               defined x-major; this transposes in and out so the position angle
+               keeps its meaning.
     """
+    if yx_order:
+        image = image.transpose(0, 2, 1)
     nband, nx, ny = image.shape
+
+    gaussparf = np.asarray(gaussparf, dtype=np.float64)
+    per_plane = gaussparf.ndim > 1
+    if per_plane and gaussparf.shape[0] != nband:
+        raise ValueError(f"gaussparf must be of length {nband}, got {gaussparf.shape[0]}")
+    if gausspari is not None and np.ndim(gausspari) > 1 and np.shape(gausspari)[0] != nband:
+        raise ValueError(f"gausspari must be of length {nband}, got {np.shape(gausspari)[0]}")
+
     padding, unpad_x, unpad_y = get_padding_info(nx, ny, pfrac)
     ax = (1, 2)  # axes over which to perform fft
     lastsize = ny + np.sum(padding[-1])
 
-    gausskern = Gaussian2D(xx, yy, gaussparf, normalise=norm_kernel)
-    gausskern = np.pad(gausskern[None], padding, mode="constant")
-    gausskernhat = r2c(iFs(gausskern, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
+    if per_plane:
+        gausskern = np.stack([Gaussian2D(xx, yy, tuple(gaussparf[i]), normalise=norm_kernel) for i in range(nband)])
+    else:
+        gausskern = Gaussian2D(xx, yy, tuple(gaussparf), normalise=norm_kernel)[None]
+    gausskernhat = r2c(
+        iFs(np.pad(gausskern, padding, mode="constant"), axes=ax),
+        axes=ax,
+        forward=True,
+        nthreads=nthreads,
+        inorm=0,
+    )
 
     image = np.pad(image, padding, mode="constant").astype(np.float64)
     imhat = r2c(iFs(image, axes=ax), axes=ax, forward=True, nthreads=nthreads, inorm=0)
@@ -104,7 +128,7 @@ def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=
         imhat *= gausskernhat
     else:
         for i in range(nband):
-            thiskern = Gaussian2D(xx, yy, gausspari[i], normalise=norm_kernel).astype(np.float64)
+            thiskern = Gaussian2D(xx, yy, tuple(gausspari[i]), normalise=norm_kernel).astype(np.float64)
             thiskern = np.pad(thiskern[None], padding, mode="constant")
             thiskernhat = r2c(
                 iFs(thiskern, axes=ax),
@@ -114,17 +138,20 @@ def convolve2gaussres(image, xx, yy, gaussparf, nthreads, gausspari=None, pfrac=
                 inorm=0,
             )
 
+            target = gausskernhat[i] if per_plane else gausskernhat[0]
             if not np.all(np.isnan(thiskernhat)):
-                convkernhat = np.where(np.abs(thiskernhat) > 1e-10, gausskernhat / thiskernhat, 0.0)
+                convkernhat = np.where(np.abs(thiskernhat[0]) > 1e-10, target / thiskernhat[0], 0.0)
             else:
                 print("Nan values have been encountered. Subverting RuntimeWarning")
-                convkernhat = np.zeros_like(thiskernhat).astype("complex")
+                convkernhat = np.zeros_like(thiskernhat[0]).astype("complex")
 
-            imhat[i] *= convkernhat[0]
+            imhat[i] *= convkernhat
 
     image = Fs(
         c2r(imhat, axes=ax, forward=False, lastsize=lastsize, inorm=2, nthreads=nthreads),
         axes=ax,
     )[:, unpad_x, unpad_y]
 
-    return image, gausskern[:, unpad_x, unpad_y]
+    if yx_order:
+        return image.transpose(0, 2, 1), gausskern.transpose(0, 2, 1)
+    return image, gausskern
