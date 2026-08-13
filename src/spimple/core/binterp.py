@@ -6,8 +6,8 @@ from astropy.io import fits
 import numpy as np
 import pyscilog
 
-from spimple.fits import data_from_header, save_fits, set_header_info
-from spimple.utils import interpolate_beam
+from spimple.core.fits import data_from_header, expand_image_patterns, save_fits, set_header_info
+from spimple.core.utils import interpolate_beam
 
 pyscilog.init("spimple")
 log = pyscilog.get_logger("BINTERP")
@@ -33,6 +33,8 @@ def binterp(
     with relevant frequency metadata, and writes the resulting beam cube
     to the specified output file.
     """
+    image = expand_image_patterns(image)
+
     pyscilog.log_to_file("binterp.log")
 
     if not nthreads:

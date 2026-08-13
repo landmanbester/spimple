@@ -8,7 +8,7 @@ from katbeam import JimBeam
 import numpy as np
 import pyscilog
 
-from spimple.core.fits import data_from_header, load_fits, save_fits
+from spimple.core.fits import data_from_header, expand_image_patterns, load_fits, save_fits
 from spimple.core.utils import convolve2gaussres
 
 pyscilog.init("spimple")
@@ -29,6 +29,8 @@ def imconv(
     padding_frac: float = 0.5,
     out_dtype: str = "f4",
 ):
+    image = expand_image_patterns(image)
+
     pyscilog.log_to_file("image_convolver.log")
 
     if not nthreads:

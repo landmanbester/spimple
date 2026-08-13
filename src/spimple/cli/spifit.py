@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from hip_cargo import stimela_cab, stimela_output
-from hip_cargo.callbacks import expand_patterns
 import typer
 
 
@@ -13,9 +12,9 @@ import typer
 )
 @stimela_output(name="output_filename", dtype="File", info="{current.output_filename}.fits")
 def spifit(
-    image: Annotated[list[str], typer.Option(..., callback=expand_patterns, help="Image to process")],
+    image: Annotated[list[str], typer.Option(..., help="Image to process")],
     output_filename: Annotated[Path, typer.Option(..., help="Path to output directory + prefix")],
-    residual: Annotated[list[str] | None, typer.Option(callback=expand_patterns, help="Image to process")] = None,
+    residual: Annotated[list[str] | None, typer.Option(help="Image to process")] = None,
     psf_pars: Annotated[
         tuple[float, float, float] | None,
         typer.Option(

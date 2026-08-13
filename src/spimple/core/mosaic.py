@@ -9,8 +9,8 @@ import numpy as np
 import pyscilog
 import ray
 
-from spimple.fits import set_wcs
-from spimple.utils import mosaic_info, project, stitch_images
+from spimple.core.fits import expand_image_patterns, set_wcs
+from spimple.core.utils import mosaic_info, project, stitch_images
 
 pyscilog.init("spimple")
 log = pyscilog.get_logger("MOSAIC")
@@ -38,6 +38,8 @@ def mosaic(
     mosaic image using interpolation to handle different coordinate systems
     and spatial coverage.
     """
+    images = expand_image_patterns(images)
+
     # logging
     timestamp = time.strftime("%Y%m%d-%H%M%S")
     logname = f"mosaic_{timestamp}.log"

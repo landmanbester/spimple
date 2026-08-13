@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from hip_cargo import stimela_cab, stimela_output
-from hip_cargo.callbacks import expand_patterns
 import typer
 
 
@@ -15,7 +14,7 @@ import typer
 def binterp(
     image: Annotated[
         list[str],
-        typer.Option(..., callback=expand_patterns, help="A fits image providing the coordinates to interpolate to"),
+        typer.Option(..., help="A fits image providing the coordinates to interpolate to"),
     ],
     output_filename: Annotated[Path, typer.Option(..., help="Path to output directory")],
     ms: Annotated[

@@ -2,7 +2,6 @@ from pathlib import Path
 from typing import Annotated, Literal
 
 from hip_cargo import stimela_cab, stimela_output
-from hip_cargo.callbacks import expand_patterns
 import typer
 
 
@@ -13,9 +12,7 @@ import typer
 )
 @stimela_output(name="output_filename", dtype="File", info="{current.output_filename}.fits")
 def mosaic(
-    images: Annotated[
-        list[str], typer.Option(..., callback=expand_patterns, help="List of FITS images to mosaic together")
-    ],
+    images: Annotated[list[str], typer.Option(..., help="List of FITS images to mosaic together")],
     output_filename: Annotated[Path, typer.Option(..., help="Path to output mosaic FITS file")],
     beam_model: Annotated[
         str | None,

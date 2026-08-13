@@ -9,7 +9,7 @@ from katbeam import JimBeam
 import numpy as np
 import pyscilog
 
-from spimple.core.fits import data_from_header, load_fits, save_fits, set_header_info
+from spimple.core.fits import data_from_header, expand_image_patterns, load_fits, save_fits, set_header_info
 from spimple.core.utils import convolve2gaussres, interpolate_beam
 
 pyscilog.init("spimple")
@@ -53,6 +53,10 @@ def spifit(
     product selection, and is designed for efficient processing of large datasets using
     Dask for parallelization.
     """
+    image = expand_image_patterns(image)
+    if residual is not None:
+        residual = expand_image_patterns(residual)
+
     pyscilog.log_to_file("spifit.log")
 
     if not nthreads:
