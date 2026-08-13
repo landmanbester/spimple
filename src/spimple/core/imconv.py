@@ -15,7 +15,7 @@ log = get_logger("IMCONV")
 
 
 def imconv(
-    image: list[str],
+    images: list[str],
     output_filename: Path,
     products: str = "i",
     psf_pars: tuple[float, float, float] | None = None,
@@ -30,13 +30,13 @@ def imconv(
 ):
     log_options(log, **locals())
 
-    image = expand_image_patterns(image)
+    images = expand_image_patterns(images)
 
     if not nthreads:
         nthreads = multiprocessing.cpu_count()
 
     # read coords from fits file
-    hdr = fits.getheader(image[0])
+    hdr = fits.getheader(images[0])
     l_coord, ref_l = data_from_header(hdr, axis=1)
     l_coord -= ref_l
     m_coord, ref_m = data_from_header(hdr, axis=2)
@@ -129,7 +129,7 @@ def imconv(
     xx, yy = np.meshgrid(l_coord, m_coord, indexing="ij")
 
     # convolve image
-    imagei = load_fits(image[0], dtype=np.float32).squeeze()
+    imagei = load_fits(images[0], dtype=np.float32).squeeze()
     if imagei.ndim == 2:
         imagei = imagei[None, :, :]
     if imagei.ndim != 3:

@@ -16,7 +16,7 @@ from spimple.core.imconv import imconv
 def test_writes_convolved_image(image_cube, beam_params, tmp_path):
     outname = tmp_path / "conv"
 
-    imconv(image=[image_cube], output_filename=outname, products="i", psf_pars=beam_params, nthreads=1)
+    imconv(images=[image_cube], output_filename=outname, products="i", psf_pars=beam_params, nthreads=1)
 
     written = tmp_path / "conv.convolved.fits"
     assert written.exists(), f"expected {written}, found {sorted(p.name for p in tmp_path.iterdir())}"
@@ -28,7 +28,7 @@ def test_products_letters_select_outputs(image_cube, beam_params, tmp_path):
     """'c' adds the restoring beam alongside 'i's convolved image."""
     outname = tmp_path / "multi"
 
-    imconv(image=[image_cube], output_filename=outname, products="ic", psf_pars=beam_params, nthreads=1)
+    imconv(images=[image_cube], output_filename=outname, products="ic", psf_pars=beam_params, nthreads=1)
 
     assert (tmp_path / "multi.convolved.fits").exists()
     assert (tmp_path / "multi.clean_psf.fits").exists()
@@ -39,7 +39,7 @@ def test_power_beam_product_requires_a_beam_model(image_cube, beam_params, tmp_p
     """'b' without a beam model is a clear error, not a crash deep in the beam code."""
     with pytest.raises(ValueError, match="no beam model provided"):
         imconv(
-            image=[image_cube],
+            images=[image_cube],
             output_filename=tmp_path / "nobeam",
             products="b",
             psf_pars=beam_params,
@@ -52,7 +52,7 @@ def test_out_dtype_is_honoured(image_cube, beam_params, tmp_path):
     outname = tmp_path / "f8"
 
     imconv(
-        image=[image_cube],
+        images=[image_cube],
         output_filename=outname,
         products="i",
         psf_pars=beam_params,
@@ -75,7 +75,7 @@ def test_circ_psf_changes_the_convolution(image_cube, beam_params, tmp_path):
     """
     for circ in (False, True):
         imconv(
-            image=[image_cube],
+            images=[image_cube],
             output_filename=tmp_path / f"circ{circ}",
             products="i",
             psf_pars=beam_params,
@@ -101,7 +101,7 @@ def test_convolution_scales_flux_by_the_beam_area_ratio(image_cube, beam_params,
     """
     outname = tmp_path / "flux"
 
-    imconv(image=[image_cube], output_filename=outname, products="i", psf_pars=beam_params, nthreads=1)
+    imconv(images=[image_cube], output_filename=outname, products="i", psf_pars=beam_params, nthreads=1)
 
     original = np.squeeze(fits.getdata(image_cube))
     convolved = np.squeeze(fits.getdata(str(tmp_path / "flux.convolved.fits")))
