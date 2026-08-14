@@ -4,152 +4,113 @@ import multiprocessing
 from pathlib import Path
 
 import numpy as np
-import ray
-from astropy.io import fits
 
-from spimple.utils.fits import expand_image_patterns, set_wcs
+from spimple.utils.datatree import PRODUCT_VARS, band_nodes, open_store, partition_nodes, write_node
 from spimple.utils.logging import get_logger, log_options
-from spimple.utils.mosaic import mosaic_info, project, stitch_images
+from spimple.utils.mosaic import stitch_band
+from spimple.utils.render import dt2fits
 
 log = get_logger("MOSAIC")
 
 
 def mosaic(
-    images: list[str],
-    output_filename: str,
-    beam_model: str | None = None,
-    band: str = "L",
-    ref_image: str | None = None,
-    padding: float = 0.1,
-    method: str = "interp",
-    nthreads: int = 1,
-    nworkers: int = 1,
+    store: str,
+    output_filename: str | None = None,
+    eta: float = 1e-3,
+    products: str = "aik",
+    fits_outputs: str = "I",
+    fits_output_folder: str | None = None,
     out_dtype: str = "f4",
-    convolve: bool = False,
-    redo_project: bool = False,
-    debug: bool = False,
+    nthreads: int | None = None,
+    nworkers: int = 1,
 ):
     """
-    Mosaic multiple FITS images together onto a common coordinate grid.
+    Combine the image space partitions of a datatree into band mean images.
 
-    This function takes multiple FITS images and combines them into a single
-    mosaic image using interpolation to handle different coordinate systems
-    and spatial coverage.
+    Only meaningful for a store written by spimple init from more than one
+    pointing. A tree from pfb-imaging mosaics in visibility space, so its band
+    nodes arrive already populated and there is nothing here to combine.
     """
     log_options(log, **locals())
 
-    images = expand_image_patterns(images)
-
-    # ray init
     if not nthreads:
-        nthreads = multiprocessing.cpu_count() // 2
+        nthreads = multiprocessing.cpu_count()
 
-    ray.init(
-        num_cpus=nworkers,
-        logging_level="INFO",
-        ignore_reinit_error=True,
-        local_mode=debug,
-    )
+    store = str(store)
+    dt = open_store(store)
+    nodes = band_nodes(dt)
+    if not nodes:
+        raise ValueError(f"{store} has no band nodes")
 
-    path = Path(output_filename)
-    if not path.parent.exists():
-        log.info("Creating output directory: %s", path.parent)
-        path.parent.mkdir(parents=True, exist_ok=True)
+    letters = tuple(k for k in ("a", "i", "k") if k in products)
+    combined = 0
+    for node in nodes:
+        # A pfb tree has partition children too, but they hold visibility-space
+        # arrays and a BEAM -- never the image-space products with a footprint
+        # mask that this command combines. Test for what we consume, not for
+        # the mere presence of a child.
+        parts = [
+            p
+            for p in partition_nodes(dt, node)
+            if "MASK" in dt[f"{node}/{p}"].ds and PRODUCT_VARS["a"] in dt[f"{node}/{p}"].ds
+        ]
+        if not parts:
+            raise ValueError(
+                f"{store}/{node} has no image-space partitions to combine and its band products are "
+                "already populated; a pfb-imaging tree mosaics in visibility space and needs no "
+                "spimple mosaic step"
+            )
+        datasets = [dt[f"{node}/{p}"].ds for p in parts]
 
-    # project images
-    log.info("Generating reference header")
-    # `images` was already resolved by expand_image_patterns above: globs are
-    # expanded, entries de-duplicated and sorted, and a pattern matching nothing
-    # has already raised. Re-globbing here would additionally break on absolute
-    # paths, since Path().glob rejects non-relative patterns.
-    ref_wcs, ufreqs, out_names = mosaic_info(images, output_filename)
+        apparent = np.stack([ds[PRODUCT_VARS["a"]].values for ds in datasets])
+        beams = np.stack([ds.BEAM.values for ds in datasets])
+        masks = np.stack([ds.MASK.values[0] for ds in datasets])
+        mixed = np.stack([ds[PRODUCT_VARS["k"]].values for ds in datasets]) if "k" in letters else None
+        wsums = np.stack([np.atleast_1d(ds.WSUM.values) for ds in datasets])
+        rms = np.stack([np.atleast_1d(ds.RMS.values) for ds in datasets]) if "RMS" in datasets[0] else None
 
-    nyo, nxo = ref_wcs.array_shape
-    nchano = ufreqs.size
-    log.info("Output image will be of shape (%s, %s, %s)", nchano, nxo, nyo)
+        out = stitch_band(apparent, beams, masks, mixed=mixed, rms=rms, wsums=wsums, eta=eta)
 
-    # check if projection has been done
-    do_project = False
-    if not redo_project:
-        for name in out_names:
-            if not Path(name).is_dir():
-                do_project = True
-                break
-    else:
-        do_project = True
+        ref = dt[node].ds
+        data_vars = {
+            "IMAGE": (("corr", "y", "x"), out["IMAGE"].astype(out_dtype)),
+            "BIMAGE": (("corr", "y", "x"), out["BIMAGE"].astype(out_dtype)),
+            "BEAM": (("corr", "y", "x"), out["BEAM"].astype(out_dtype)),
+            "SPATIALWGT": (("corr", "y", "x"), out["SPATIALWGT"].astype(out_dtype)),
+            "WSUM": (("corr",), out["WSUM"].astype(np.float64)),
+            "PSFPARSF": (("corr", "bpar"), ref.PSFPARSF.values),
+        }
+        if "KIMAGE" in out:
+            data_vars["KIMAGE"] = (("corr", "y", "x"), out["KIMAGE"].astype(out_dtype))
+        if "RMS" in out:
+            data_vars["RMS"] = (("corr",), out["RMS"].astype(np.float64))
 
-    if do_project:
-        log.info("Projecting images onto common wcs")
-        tasks = []
-        for imnum, im in enumerate(images):
-            fut = project.remote(im, imnum, ref_wcs, beam_model, output_filename)
-            tasks.append(fut)
+        write_node(
+            store,
+            node,
+            data_vars,
+            {"eta": float(eta), "nparts": len(parts)},
+            {"corr": list(ref.corr.values), "bpar": list(ref.bpar.values)},
+        )
+        combined += 1
+        log.info("Combined %d partitions for %s", len(parts), node)
 
-        # Process tasks as they complete
-        remaining_tasks = tasks.copy()
-        while remaining_tasks:
-            # Wait for at least 1 task to complete
-            ready, remaining_tasks = ray.wait(remaining_tasks, num_returns=1)
+    log.info("Combined %d bands", combined)
 
-            # Process the completed task
-            for task in ready:
-                result = ray.get(task)
-                log.info("Completed: %s", result)
-
-    log.info("Solving linear system")
-    outim = np.zeros((nchano, nxo, nyo))
-    outwgt = np.zeros((nchano, nxo, nyo))
-    tasks = []
-    for freq in ufreqs:
-        fut = stitch_images.remote(freq, out_names)
-        tasks.append(fut)
-
-    # Process tasks as they complete
-    remaining_tasks = tasks.copy()
-    while remaining_tasks:
-        # Wait for at least 1 task to complete
-        ready, remaining_tasks = ray.wait(remaining_tasks, num_returns=1)
-
-        # Process the completed task
-        for task in ready:
-            image, weight, info, freq = ray.get(task)
-            log.info("Conjugate gradient completed after %s iterations for freq = %s", info, freq)
-            c = np.nonzero(ufreqs == freq)[0]
-            outim[c] = image
-            outwgt[c] = weight
-
-    # Create output header
-    cell_x = np.abs(ref_wcs.wcs.cdelt[0])
-    cell_y = np.abs(ref_wcs.wcs.cdelt[1])
-    ra = ref_wcs.wcs.crval[0] * np.pi / 180
-    dec = ref_wcs.wcs.crval[1] * np.pi / 180
-    out_hdr = set_wcs(
-        cell_x,
-        cell_y,
-        nxo,
-        nyo,
-        (ra, dec),
-        ufreqs,
-        unit="Jy/beam",
-        GuassPar=None,
-        ms_time=None,
-        header=True,
-        casambm=False,
-    )
-
-    # Save output
-
-    hdu = fits.PrimaryHDU(header=out_hdr)
-    hdu.data = outim
-    hdu.writeto(output_filename, overwrite=True)
-    log.info("Saved mosaic to %s", output_filename)
-
-    # Save weight map
-    weight_filename = output_filename.replace(".fits", "_weights.fits")
-    hdu.data = outwgt
-    hdu.writeto(weight_filename, overwrite=True)
-    log.info("Saved weight map to %s", weight_filename)
+    if fits_outputs:
+        base = output_filename or str(Path(store).with_suffix(""))
+        folder = fits_output_folder or str(Path(store).parent / "fits")
+        Path(folder).mkdir(parents=True, exist_ok=True)
+        oname = f"{folder}/{Path(base).name}"
+        for letter in ("a", "i", "k"):
+            if letter in fits_outputs or letter.upper() in fits_outputs:
+                dt2fits(
+                    store,
+                    PRODUCT_VARS[letter],
+                    oname,
+                    otype=out_dtype,
+                    do_mfs=letter in fits_outputs,
+                    do_cube=letter.upper() in fits_outputs,
+                )
 
     log.info("Mosaic completed successfully")
-
-    ray.shutdown()

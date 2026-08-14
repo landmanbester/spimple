@@ -112,3 +112,12 @@ def test_convolution_scales_flux_by_the_beam_area_ratio(image_cube, beam_params,
     expected_ratio = target_area / native_area
 
     assert convolved[-1].sum() / original[-1].sum() == pytest.approx(expected_ratio, rel=0.05)
+
+
+def test_imconv_warns_that_it_is_deprecated(image_cube, beam_params, tmp_path, caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="spimple.IMCONV"):
+        imconv([image_cube], tmp_path / "conv", psf_pars=beam_params)
+
+    assert any("spimple init" in record.message for record in caplog.records)

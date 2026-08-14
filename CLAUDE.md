@@ -9,14 +9,17 @@ install with auto-generated [Stimela](https://github.com/caracal-pipeline/stimel
 definitions and containerised execution. The project prioritises **simplicity and
 minimalism** over feature completeness.
 
-Four commands, each a thin `cli/` wrapper over a `core/` implementation:
+Five commands, each a thin `cli/` wrapper over a `core/` implementation. `init`, `mosaic`
+and `spifit` operate on an `xarray.DataTree` store laid out exactly as `pfb imager` writes
+it, so a pfb tree is consumed directly — see `docs/wiki/datatree-contract.md`.
 
 | Command | What it does |
 |---|---|
-| `spimple spifit` | Fits a spectral index model to an image cube, optionally convolving and applying a primary beam on the fly. |
-| `spimple imconv` | Convolves images to a common resolution, optionally with primary beam correction. |
-| `spimple binterp` | Interpolates a primary beam model onto an image's coordinate grid. |
-| `spimple mosaic` | Reprojects and combines images onto a common coordinate grid. |
+| `spimple init` | Ingests FITS into a datatree: partitions by phase centre, bands by frequency, resolution homogenised, beams attached, partitions reprojected onto a union grid. |
+| `spimple mosaic` | Combines a datatree's image-space partitions into band mean images. Never needed for a pfb tree, which mosaics in visibility space. |
+| `spimple spifit` | Fits a spectral index model to the band images of a datatree. |
+| `spimple binterp` | Interpolates a primary beam model onto an image's coordinate grid. FITS in, FITS out; the only home of the MS-derived DDE beam path. |
+| `spimple imconv` | **Deprecated**, subsumed by `init`. Removal in a follow-up PR. |
 
 *Detailed architecture, Python standards and CI rules are modularised into
 `.claude/rules/` for progressive disclosure. Read the relevant file before editing the
@@ -25,6 +28,7 @@ matching files.*
 | Rule file | Read it when editing |
 |---|---|
 | `.claude/rules/architecture.md` | `src/spimple/**` — layout, install modes, container fallback, cab generation. |
+| `docs/wiki/datatree-contract.md` | anything reading or writing a `.dt` store — the layout, its invariants, and what spimple ignores in a pfb tree. |
 | `.claude/rules/python-standards.md` | any `**/*.py` — type hints, lazy imports, Typer syntax, hip-cargo types. |
 | `.claude/rules/testing-and-ci.md` | `tests/**` or `.github/workflows/**` — round-trip tests, fixtures, commits. |
 

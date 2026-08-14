@@ -4,7 +4,8 @@ cabs:
     command: spimple.core.imconv.imconv
     name: imconv
     info:
-      Homogenise resolution with Gaussian convolution
+      Convolve images to a common resolution.
+      Deprecated in favour of spimple init.
     policies:
       pass_missing_as_none: true
     image: ghcr.io/landmanbester/spimple:latest

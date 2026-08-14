@@ -2,116 +2,82 @@ from pathlib import Path
 from typing import Annotated, Literal, NewType
 
 import typer
-from hip_cargo import (
-    ListStr,
-    StimelaMeta,
-    parse_list_str,
-    parse_upath,
-    stimela_cab,
-    stimela_output,
-)
+from hip_cargo import StimelaMeta, parse_upath, stimela_cab, stimela_output
 
+Directory = NewType("Directory", Path)
 File = NewType("File", Path)
 
 
 @stimela_cab(
     name="mosaic",
-    info="Reproject and combine multiple images into a mosaic.",
+    info="Combine the partitions of a datatree into band mean images.",
     policies={"pass_missing_as_none": True},
 )
 @stimela_output(
-    dtype="File",
-    name="mosaic-image",
-    info="Mosaicked image on the common coordinate grid.",
-    implicit="{current.output-filename}",
+    dtype="Directory",
+    name="datatree",
+    info="Datatree store with the band mean images populated.",
+    implicit="{current.store}",
 )
 def mosaic(
-    images: Annotated[
-        ListStr,
+    store: Annotated[
+        Directory,
         typer.Option(
             ...,
-            parser=parse_list_str,
-            help="List of FITS images to mosaic together",
+            parser=parse_upath,
+            help="Datatree store written by spimple init",
         ),
     ],
     output_filename: Annotated[
-        File,
-        typer.Option(
-            ...,
-            parser=parse_upath,
-            help="Path of the output mosaic FITS file",
-        ),
-    ],
-    beam_model: Annotated[
         File | None,
         typer.Option(
             parser=parse_upath,
-            help="Beam dataset to apply. Use binterp to make a power beam matching the images.",
+            help="Basename for the rendered FITS files",
         ),
     ] = None,
-    band: Annotated[
-        str,
-        typer.Option(
-            help="Band to use with JimBeam. L, UHF or S",
-        ),
-    ] = "L",
-    ref_image: Annotated[
-        File | None,
-        typer.Option(
-            parser=parse_upath,
-            help="Reference image defining the output coordinate system. "
-            "An optimal reference is derived when this is not provided.",
-        ),
-    ] = None,
-    padding: Annotated[
+    eta: Annotated[
         float,
         typer.Option(
-            help="Padding factor for FFTs.",
+            help="Tikhonov floor keeping the solve finite where no partition covers",
         ),
-    ] = 0.1,
-    method: Annotated[
-        Literal["interp", "adaptive", "exact"],
+    ] = 0.001,
+    products: Annotated[
+        str,
         typer.Option(
-            help="Reprojection method, see reproject for details.",
+            help="Products to combine. a is apparent. i is intrinsic. k is mixed",
         ),
-    ] = "interp",
-    nthreads: Annotated[
-        int,
+    ] = "aik",
+    fits_outputs: Annotated[
+        str,
         typer.Option(
-            help="Number of threads to use per worker.",
+            help="Products to render as FITS. Lowercase is MFS and uppercase is a cube",
         ),
-    ] = 1,
-    nworkers: Annotated[
-        int,
+    ] = "I",
+    fits_output_folder: Annotated[
+        Directory | None,
         typer.Option(
-            help="Number of workers to use for parallel processing.",
+            parser=parse_upath,
+            help="Folder the rendered FITS are written to",
         ),
-    ] = 1,
+    ] = None,
     out_dtype: Annotated[
         str,
         typer.Option(
             help="Data type of output. Default is single precision",
         ),
     ] = "f4",
-    convolve: Annotated[
-        bool,
+    nthreads: Annotated[
+        int | None,
         typer.Option(
-            help="Flag to convolve images to common resolution before projection. "
-            "If no psf-pars are passed in the lowest resolution will be determined automatically.",
+            help="Number of threads to use per worker",
         ),
-    ] = False,
-    redo_project: Annotated[
-        bool,
+    ] = None,
+    nworkers: Annotated[
+        int,
         typer.Option(
-            help="Force re-projection even if output exists.",
+            help="Number of workers to use for parallel processing",
         ),
-    ] = False,
-    debug: Annotated[
-        bool,
-        typer.Option(
-            help="Run everything in local mode to assist with debugging.",
-        ),
-    ] = False,
+    ] = 1,
     backend: Annotated[
         Literal["auto", "native", "apptainer", "singularity", "docker", "podman"],
         typer.Option(
@@ -132,7 +98,7 @@ def mosaic(
     ] = False,
 ):
     """
-    Reproject and combine multiple images into a mosaic.
+    Combine the partitions of a datatree into band mean images.
     """
     if backend == "native" or backend == "auto":
         try:
@@ -142,19 +108,15 @@ def mosaic(
             preflight_remote_must_exist(
                 mosaic,
                 dict(
-                    images=images,
+                    store=store,
                     output_filename=output_filename,
-                    beam_model=beam_model,
-                    band=band,
-                    ref_image=ref_image,
-                    padding=padding,
-                    method=method,
+                    eta=eta,
+                    products=products,
+                    fits_outputs=fits_outputs,
+                    fits_output_folder=fits_output_folder,
+                    out_dtype=out_dtype,
                     nthreads=nthreads,
                     nworkers=nworkers,
-                    out_dtype=out_dtype,
-                    convolve=convolve,
-                    redo_project=redo_project,
-                    debug=debug,
                 ),
             )
 
@@ -163,19 +125,15 @@ def mosaic(
 
             # Call the core function with all parameters
             mosaic_core(
-                images,
-                output_filename,
-                beam_model=beam_model,
-                band=band,
-                ref_image=ref_image,
-                padding=padding,
-                method=method,
+                store,
+                output_filename=output_filename,
+                eta=eta,
+                products=products,
+                fits_outputs=fits_outputs,
+                fits_output_folder=fits_output_folder,
+                out_dtype=out_dtype,
                 nthreads=nthreads,
                 nworkers=nworkers,
-                out_dtype=out_dtype,
-                convolve=convolve,
-                redo_project=redo_project,
-                debug=debug,
             )
             return
         except ImportError:
@@ -193,19 +151,15 @@ def mosaic(
     run_in_container(
         mosaic,
         dict(
-            images=images,
+            store=store,
             output_filename=output_filename,
-            beam_model=beam_model,
-            band=band,
-            ref_image=ref_image,
-            padding=padding,
-            method=method,
+            eta=eta,
+            products=products,
+            fits_outputs=fits_outputs,
+            fits_output_folder=fits_output_folder,
+            out_dtype=out_dtype,
             nthreads=nthreads,
             nworkers=nworkers,
-            out_dtype=out_dtype,
-            convolve=convolve,
-            redo_project=redo_project,
-            debug=debug,
         ),
         image=image,
         backend=backend,

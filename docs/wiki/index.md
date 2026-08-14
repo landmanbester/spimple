@@ -3,7 +3,7 @@ type: index
 title: spimple LLM wiki
 description: Progressive-disclosure listing of the in-repo knowledge bundle.
 timestamp: 2026-08-13
-last_verified_commit: 49ecf34
+last_verified_commit: b7bfbc4
 ---
 
 # spimple LLM wiki
@@ -31,6 +31,7 @@ update the page and refresh its stamp in the same session.
 | Page | Covers | Read when |
 |---|---|---|
 | [design-decisions.md](design-decisions.md) | The decision ledger, known defects, and the outstanding GitHub App setup | Before "fixing" something that looks wrong, or changing structure |
+| [datatree-contract.md](datatree-contract.md) | The DataTree store layout shared with pfb-imaging, its invariants, and which pfb variables spimple reads | Before touching `utils/datatree.py`, `core/init.py`, `core/mosaic.py`, `core/spifit.py`, or anything that writes to a store |
 | [fits-and-beams.md](fits-and-beams.md) | Frequency-axis conventions, per-channel beam keywords, beam-model layouts, JimBeam bands | Touching `utils/fits.py`, `utils/beam.py`, or any FITS fixture |
 
 ## Not covered here

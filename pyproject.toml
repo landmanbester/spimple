@@ -46,6 +46,7 @@ full = [
     "reproject",
     "scipy",
     "xarray",
+    "zarr",
 ]
 
 [project.scripts]

@@ -40,3 +40,135 @@ def test_convolve2gaussres(nx, ny, nband, alpha):
     # offset for relative difference
     assert_allclose(1 + alpha, 1 + out[0, :], atol=5e-4, rtol=5e-4)
     assert_allclose(out[2, :], restored[0, Ix, Iy], atol=5e-4, rtol=5e-4)
+
+
+def test_gaussian2d_has_the_requested_fwhm():
+    """Half maximum falls at emaj/2 along y and emin/2 along x when pa is zero.
+
+    The quadratic form puts the major axis along y at pa = 0, matching the FITS
+    convention where BPA is measured from north.
+    """
+    n = 129
+    c = n // 2
+    v = np.arange(n) - c
+    xx, yy = np.meshgrid(v, v, indexing="ij")
+
+    kern = Gaussian2D(xx, yy, (20.0, 10.0, 0.0), normalise=False, nsigma=10)
+
+    assert kern[c, c] == pytest.approx(1.0)
+    assert kern[c, c + 10] == pytest.approx(0.5, rel=1e-12)
+    assert kern[c + 5, c] == pytest.approx(0.5, rel=1e-12)
+
+
+def test_gaussian2d_support_is_nsigma_major_axis_fwhms():
+    """Support is nsigma FWHMs, wide enough that deconvolution stays clean.
+
+    Truncating nearer the core leaves a spectral ripple that swamps the
+    kernel's own transform when convolve2gaussres divides by it; see the
+    comment in Gaussian2D and the deconvolution test below.
+    """
+    n = 513
+    c = n // 2
+    v = np.arange(n) - c
+    xx, yy = np.meshgrid(v, v, indexing="ij")
+
+    emaj = 20.0
+    kern = Gaussian2D(xx, yy, (emaj, emaj, 0.0), normalise=False, nsigma=5)
+
+    assert kern[c + int(4.5 * emaj), c] > 0.0
+    assert kern[c + int(5.5 * emaj), c] == 0.0
+
+
+def _grids(nx, ny):
+    x = -(nx // 2) + np.arange(nx)
+    y = -(ny // 2) + np.arange(ny)
+    return np.meshgrid(x, y, indexing="ij")
+
+
+def test_convolve2gaussres_yx_order_matches_the_transposed_call():
+    """Convolving (n, y, x) with yx_order equals convolving its transpose without."""
+    nx, ny, nband = 48, 32, 3
+    xx, yy = _grids(nx, ny)
+    rng = np.random.default_rng(7)
+    xmajor = rng.normal(size=(nband, nx, ny))
+    yxmajor = xmajor.transpose(0, 2, 1).copy()
+    target = (6.0, 4.0, 0.4)
+
+    ref, ref_kern = convolve2gaussres(xmajor, xx, yy, target, 1)
+    out, out_kern = convolve2gaussres(yxmajor, xx, yy, target, 1, yx_order=True)
+
+    np.testing.assert_allclose(out, ref.transpose(0, 2, 1), atol=1e-12)
+    np.testing.assert_allclose(out_kern, ref_kern.transpose(0, 2, 1), atol=1e-12)
+
+
+def test_convolve2gaussres_accepts_a_target_per_plane():
+    """A (nplane, 3) gaussparf convolves each plane to its own resolution."""
+    nx, ny = 64, 64
+    xx, yy = _grids(nx, ny)
+    delta = np.zeros((2, nx, ny))
+    delta[:, nx // 2, ny // 2] = 1.0
+    targets = np.array([[8.0, 8.0, 0.0], [4.0, 4.0, 0.0]])
+
+    out, _ = convolve2gaussres(delta, xx, yy, targets, 1, norm_kernel=False)
+
+    for plane in range(targets.shape[0]):
+        expected = Gaussian2D(xx, yy, tuple(targets[plane]), normalise=False)
+        np.testing.assert_allclose(out[plane], expected, atol=1e-8)
+
+
+def test_convolve2gaussres_rejects_a_mismatched_per_plane_target():
+    nx, ny = 32, 32
+    xx, yy = _grids(nx, ny)
+    image = np.zeros((3, nx, ny))
+    targets = np.array([[8.0, 8.0, 0.0], [4.0, 4.0, 0.0]])
+
+    with pytest.raises(ValueError, match="gaussparf"):
+        convolve2gaussres(image, xx, yy, targets, 1)
+
+
+def test_convolve2gaussres_accepts_a_numpy_gausspari():
+    """gausspari as an array must not trip an elementwise truth test."""
+    nx, ny = 48, 48
+    xx, yy = _grids(nx, ny)
+    image = np.zeros((2, nx, ny))
+    image[:, nx // 2, ny // 2] = 1.0
+    gausspari = np.array([[4.0, 4.0, 0.0], [4.0, 4.0, 0.0]])
+    gaussparf = np.array([[8.0, 8.0, 0.0], [8.0, 8.0, 0.0]])
+
+    out, _ = convolve2gaussres(image, xx, yy, gaussparf, 1, gausspari=gausspari)
+
+    assert np.isfinite(out).all()
+    assert out[0, nx // 2, ny // 2] > 0.0
+
+
+@pmp("npix", [32, 128])
+def test_convolve2gaussres_preserves_position_when_deconvolving(npix):
+    """Deconvolving from gausspari to gaussparf must not move a source.
+
+    This is the path init uses to homogenise resolution. It is sensitive to
+    the Gaussian kernel's support: truncating the kernel too near its core
+    makes the division by its transform ring badly enough to displace the
+    peak by twice its offset from the image centre.
+    """
+    y0, x0 = npix // 3, npix // 2 + 4
+    image = np.zeros((1, npix, npix))
+    image[0, y0, x0] = 1.0
+    v = -(npix // 2) + np.arange(npix)
+    xx, yy = np.meshgrid(v, v, indexing="ij")
+
+    out, _ = convolve2gaussres(
+        image,
+        xx,
+        yy,
+        np.array([[6.3, 4.2, 0.0]]),
+        1,
+        gausspari=np.array([[6.0, 4.0, 0.0]]),
+        yx_order=True,
+    )
+
+    assert np.unravel_index(np.argmax(out[0]), out[0].shape) == (y0, x0)
+    if npix >= 128:
+        # Ringing is only meaningfully bounded once the beam is small relative
+        # to the image. At npix=32 a 6-pixel beam spans a fifth of the frame and
+        # large ringing is physical, not a defect.
+        assert abs(out[0].min()) < 0.1 * out[0].max()

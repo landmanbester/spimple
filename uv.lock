@@ -2916,6 +2916,8 @@ full = [
     { name = "scipy", version = "1.16.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
     { name = "xarray", version = "2025.6.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
     { name = "xarray", version = "2025.7.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
+    { name = "zarr", version = "2.18.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11'" },
+    { name = "zarr", version = "3.1.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11'" },
 ]
 
 [package.dev-dependencies]
@@ -2942,6 +2944,7 @@ requires-dist = [
     { name = "reproject", marker = "extra == 'full'" },
     { name = "scipy", marker = "extra == 'full'" },
     { name = "xarray", marker = "extra == 'full'" },
+    { name = "zarr", marker = "extra == 'full'" },
 ]
 provides-extras = ["full"]
 
