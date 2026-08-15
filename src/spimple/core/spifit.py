@@ -161,6 +161,17 @@ def spifit(
             weights = np.ones(nband, dtype=np.float64)
         log.info("Channel weights: %s", weights)
 
+        # threshold is an SNR cut, and every rms below is apparent: image plane
+        # noise is flat in the apparent image, which is what pfb's RESIDUAL and
+        # init's RMS both measure. IMAGE has already been divided by the beam,
+        # so comparing it against that rms cuts at threshold * B instead and
+        # admits the field edge at a few sigma, exactly where dividing by the
+        # beam has inflated the noise. Put the beam back before any comparison,
+        # so --threshold means the same thing on both flux scales -- including
+        # the max_dr fallback, whose peak would otherwise be the intrinsic peak
+        # and so a different cut whenever the brightest pixel is off axis.
+        snr_cube = cube if flux_scale == "apparent" else cube * beam
+
         # threshold: the band RMS if the tree carries it, else a normalised
         # RESIDUAL, else a dynamic range cut
         rms_values = None
@@ -178,7 +189,7 @@ def spifit(
             threshold_val = threshold * rms_mfs
             log.info("Threshold is %s times the rms from %s", threshold, source)
         else:
-            finite = cube[np.isfinite(cube)]
+            finite = snr_cube[np.isfinite(snr_cube)]
             threshold_val = float(finite.max()) / max_dr if finite.size else 0.0
             log.info("No rms available. Setting threshold from a max dynamic range of %s", max_dr)
         log.info("Threshold set to %s Jy", threshold_val)
@@ -204,14 +215,16 @@ def spifit(
             int(beam_ok.sum()),
             beam_ok.size,
         )
+        # the apparent-scale Stokes I, which is what threshold_val was built for
+        snr_image = snr_cube[:, 0]
         # min, not nanmin: a band that is NaN at a pixel is a band the fit
         # would have consumed as NaN anyway, so the pixel is not fittable
-        minimage = image.min(axis=0)
+        minimage = snr_image.min(axis=0)
         maskindices = np.argwhere(beam_ok & np.isfinite(minimage) & (minimage > threshold_val))
         if not maskindices.size:
             raise ValueError(
                 f"No components found above threshold. Try lowering your threshold or pb_min ({pb_min}). "
-                f"Max of the image is {np.nanmax(image):3.2e}"
+                f"Max of the apparent image is {np.nanmax(snr_image):3.2e}"
             )
         fitcube = image[:, maskindices[:, 0], maskindices[:, 1]].T
         beam_comps = fit_beam[:, maskindices[:, 0], maskindices[:, 1]].T

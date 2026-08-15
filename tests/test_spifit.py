@@ -61,6 +61,24 @@ def narrowing_beam_tree(pfb_tree, tmp_path):
     return tree
 
 
+@pytest.fixture
+def no_rms_tree(narrowing_beam_tree):
+    """narrowing_beam_tree with RESIDUAL removed, so spifit falls back to max_dr.
+
+    A tree carrying neither RMS nor RESIDUAL is the only way to reach the
+    dynamic range branch of the threshold, which derives its own cut from the
+    image rather than from a stored noise estimate.
+    """
+    import shutil
+
+    dt = open_store(narrowing_beam_tree)
+    for node in band_nodes(dt):
+        shutil.rmtree(os.path.join(narrowing_beam_tree, node, "RESIDUAL"))
+    for ds in (open_store(narrowing_beam_tree)[n].ds for n in band_nodes(dt)):
+        assert "RESIDUAL" not in ds and "RMS" not in ds
+    return narrowing_beam_tree
+
+
 def _band_beams(tree):
     """(nband, ny, nx) stack of the tree's band beams, Stokes I only."""
     dt = open_store(tree)
@@ -95,13 +113,59 @@ def test_beam_cut_excludes_pixels_failing_in_any_band(narrowing_beam_tree, tmp_p
     assert np.isfinite(alpha_lo[straddle]).any(), "no fittable flux in the straddle annulus"
 
 
-def test_beam_cut_is_identical_across_flux_scales(narrowing_beam_tree, tmp_path):
-    """The mask comes from BEAM, so both scales must drop the same pixels.
+def test_threshold_cuts_the_same_pixels_on_both_flux_scales(narrowing_beam_tree, tmp_path):
+    """--threshold is an SNR cut, and the noise is flat in the apparent image.
 
-    The apparent image is attenuated, so its flux threshold bites harder; the
-    beam cut itself must not differ, hence comparing supersets rather than
-    equality.
+    Every rms spifit can reach is apparent: pfb's band RESIDUAL is apparent
+    flux and init derives RMS from the input residual. IMAGE has already been
+    divided by the beam, so testing it against that rms cuts at threshold * B
+    and admits the field edge at a few sigma. Both scales must therefore end up
+    fitting exactly the same pixels.
     """
+    app = str(tmp_path / "spi_app")
+    intr = str(tmp_path / "spi_int")
+    spifit(narrowing_beam_tree, app, flux_scale="apparent", products="a", pb_min=PB_MIN)
+    spifit(narrowing_beam_tree, intr, flux_scale="intrinsic", products="a", pb_min=PB_MIN)
+
+    fitted_app = np.isfinite(fits.getdata(f"{app}_time0.alpha.fits").squeeze())
+    fitted_int = np.isfinite(fits.getdata(f"{intr}_time0.alpha.fits").squeeze())
+
+    assert fitted_app.any()
+    np.testing.assert_array_equal(fitted_int, fitted_app)
+
+    # Non-vacuity: the threshold has to be biting somewhere the beam is well
+    # below one, or dividing it out could not have moved the mask.
+    beams = _band_beams(narrowing_beam_tree)
+    assert beams.min(axis=0)[fitted_app].min() < 0.5
+    loose = str(tmp_path / "spi_loose")
+    spifit(narrowing_beam_tree, loose, flux_scale="intrinsic", products="a", pb_min=PB_MIN, threshold=1.0)
+    fitted_loose = np.isfinite(fits.getdata(f"{loose}_time0.alpha.fits").squeeze())
+    assert fitted_loose.sum() > fitted_app.sum(), "threshold is not the binding constraint here"
+
+
+def test_max_dr_threshold_is_also_on_the_apparent_scale(no_rms_tree, tmp_path):
+    """The dynamic range fallback derives its cut from the image it thresholds.
+
+    With no RMS and no RESIDUAL the threshold is the peak over max_dr. Taking
+    that peak off the intrinsic cube while comparing against apparent flux is
+    the same scale mismatch as the stored-rms path, and it does not cancel:
+    the intrinsic peak sits at max(BIMAGE / BEAM), so how far the two cuts
+    diverge depends on where in the beam the brightest pixel falls.
+    """
+    app = str(tmp_path / "spi_app")
+    intr = str(tmp_path / "spi_int")
+    spifit(no_rms_tree, app, flux_scale="apparent", products="a", pb_min=PB_MIN)
+    spifit(no_rms_tree, intr, flux_scale="intrinsic", products="a", pb_min=PB_MIN)
+
+    fitted_app = np.isfinite(fits.getdata(f"{app}_time0.alpha.fits").squeeze())
+    fitted_int = np.isfinite(fits.getdata(f"{intr}_time0.alpha.fits").squeeze())
+
+    assert fitted_app.any()
+    np.testing.assert_array_equal(fitted_int, fitted_app)
+
+
+def test_beam_cut_is_identical_across_flux_scales(narrowing_beam_tree, tmp_path):
+    """The mask comes from BEAM, so both scales must drop the same pixels."""
     app = str(tmp_path / "spi_app")
     intr = str(tmp_path / "spi_int")
     spifit(narrowing_beam_tree, app, flux_scale="apparent", products="a", pb_min=PB_MIN)

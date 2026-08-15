@@ -113,11 +113,21 @@ named `<output-filename>_time{t}.<product>.fits`. Unfitted pixels are `NaN`, not
 the floor, so the band with the smallest beam — the highest frequency one — sets the
 footprint. No pixel is ever fitted from a subset of the bands.
 
+`--threshold` is an SNR cut in multiples of the residual rms, and it is applied to the
+**apparent** flux on both scales — the intrinsic path puts the beam back before comparing.
+The rms available to `spifit` is always apparent, so testing the beam-corrected `IMAGE`
+against it would cut at `threshold × B` and admit the field edge at a few sigma. Both
+`--flux-scale` runs therefore apply the same cut, and fit the same pixels wherever the
+tree's `BIMAGE` and `IMAGE × BEAM` agree.
+
 `--flux-scale` is **required** and picks which stored product to fit: `apparent`
 (`BIMAGE`, fitted with the beam in the model) or `intrinsic` (`IMAGE`, already
 beam-corrected, fitted with `BEAM²` weights). The two are the same weighted least-squares
 problem written two ways, so they agree to machine precision on a self-consistent tree —
-run both as a check on the tree's products. `KIMAGE` is not fittable and there is no
+run both as a check on the tree's products. On a `pfb restore` tree expect close rather
+than exact agreement: it builds the two products in a way that does not leave `IMAGE`
+exactly `BIMAGE / BEAM`, which
+[`docs/wiki/design-decisions.md`](docs/wiki/design-decisions.md) quantifies. `KIMAGE` is not fittable and there is no
 `mixed` scale; see the note above. The tree must already be at one resolution —
 `spimple init` or `pfb restore --gausspar` does that.
 
@@ -150,6 +160,13 @@ comma-separated string and accept glob patterns.
   whose beam fell below the floor in only some bands were previously fitted anyway, using
   the whole band stack including the bands that failed. The fitted footprint shrinks to
   the highest-frequency band's, and alpha near the field edge changes.
+- `spifit --threshold` now cuts on apparent flux on both flux scales. `--flux-scale
+  intrinsic` previously compared the beam-corrected `IMAGE` against an apparent rms, an
+  effective cut of `threshold × B`, so its fitted footprint was always a strict superset of
+  the apparent one with a low-SNR skirt towards the field edge. The intrinsic footprint
+  shrinks to the apparent one's, up to the near-threshold pixels where a pfb tree's
+  `BIMAGE` and `IMAGE × BEAM` differ; alpha on the pixels both runs already fitted is
+  unchanged.
 - `spifit --flux-scale intrinsic` now weights each pixel by `BEAM²` instead of fitting
   with unity weights, which makes it agree with `--flux-scale apparent` exactly. Fitted
   spectral indices and their errors change wherever the beam varies across the band.
