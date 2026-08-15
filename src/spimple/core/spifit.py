@@ -204,14 +204,22 @@ def spifit(
             int(beam_ok.sum()),
             beam_ok.size,
         )
+        # threshold is an SNR cut, and every rms above is apparent: image plane
+        # noise is flat in the apparent image, which is what pfb's RESIDUAL and
+        # init's RMS both measure. IMAGE has already been divided by the beam,
+        # so comparing it against that rms cuts at threshold * B instead and
+        # admits the field edge at a few sigma, exactly where dividing by the
+        # beam has inflated the noise. Put the beam back before comparing, so
+        # --threshold means the same thing on both flux scales.
+        snr_image = image if flux_scale == "apparent" else image * pbeam
         # min, not nanmin: a band that is NaN at a pixel is a band the fit
         # would have consumed as NaN anyway, so the pixel is not fittable
-        minimage = image.min(axis=0)
+        minimage = snr_image.min(axis=0)
         maskindices = np.argwhere(beam_ok & np.isfinite(minimage) & (minimage > threshold_val))
         if not maskindices.size:
             raise ValueError(
                 f"No components found above threshold. Try lowering your threshold or pb_min ({pb_min}). "
-                f"Max of the image is {np.nanmax(image):3.2e}"
+                f"Max of the apparent image is {np.nanmax(snr_image):3.2e}"
             )
         fitcube = image[:, maskindices[:, 0], maskindices[:, 1]].T
         beam_comps = fit_beam[:, maskindices[:, 0], maskindices[:, 1]].T

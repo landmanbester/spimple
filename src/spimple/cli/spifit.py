@@ -66,7 +66,8 @@ def spifit(
     threshold: Annotated[
         float,
         typer.Option(
-            help="Multiple of the residual rms below which pixels are not fitted",
+            help="Multiple of the residual rms below which pixels are not fitted. "
+            "The cut is on apparent flux, so it means the same thing on both flux scales",
         ),
     ] = 10.0,
     max_dr: Annotated[

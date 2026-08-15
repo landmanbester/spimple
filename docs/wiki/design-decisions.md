@@ -4,7 +4,7 @@ title: Design decisions and known defects
 description: The decision ledger for the hip-cargo port, plus the defects diagnosed but not fixed.
 tags: [architecture, decisions, known-issues]
 timestamp: 2026-08-15
-last_verified_commit: a42fa00
+last_verified_commit: f494c20
 ---
 
 # Design decisions and known defects
@@ -49,6 +49,7 @@ an org package inherits its repository's access.)
 | D17 | `fit_spi_components` is vendored into `utils/fit_spi.py` and its weights carry a component axis, so `--flux-scale intrinsic` weights by `B^2`. | Image-plane noise is flat in the *apparent* image, so `IMAGE = BIMAGE / BEAM` has variance `sigma_v^2 / B(v,p)^2` and its inverse-variance weight is `B(v,p)^2 / sigma_v^2`. The beam narrows with frequency, so that weight does not factorise into a `(chan,)` vector — africanus's signature cannot express it, which is why the intrinsic path previously fitted with unity weights. With `B^2` weights the intrinsic fit is *algebraically the same normal equations* as the apparent fit with the beam in the model (`sum_v w_v (d_app - B_v M_v)^2 = sum_v (w_v B_v^2)(d_int - M_v)^2`), so the two scales become a consistency check on `BIMAGE`, `IMAGE` and `BEAM` agreeing in the tree rather than two differently-weighted estimators. Pinned to machine precision in `tests/test_fit_spi.py` and end-to-end in `test_intrinsic_and_apparent_scales_give_the_same_alpha`. |
 | D18 | `spifit` has no `--flux-scale mixed`; `KIMAGE` is not fittable and asking for it, or handing over a tree carrying only it, is an early error naming the `pfb restore` rerun. | `KIMAGE` is an intrinsic model plus an *apparent* residual, so its signal and its noise sit on different flux scales and no single beam relates them. Fitting it with the beam in the model — what the removed `mixed` path did — drove `I0` up roughly as `1/B` towards the field edge; fitting it without one mis-weights the residual instead. There is no correct setting, only two wrong ones, so the option is gone rather than fixed. It has to fail early and loudly because `pfb restore` defaults to `--outputs kK`, which writes `KIMAGE` *only*, so the tree a user most likely has is exactly the one that cannot be fitted. `init` and `mosaic` still carry `KIMAGE` through the tree (D14); it is only the fit that refuses it. |
 | D19 | `spifit`'s `--pb-min` is an all-bands cut: a pixel is fitted only where **every** band's `BEAM` clears the floor. | The old mask was `np.nanmin(np.where(pbeam > pb_min, image, np.nan), axis=0)`, whose `nanmin` discards exactly the bands the `where` had just masked out. A pixel therefore survived unless it failed the cut in *every* band, and was then handed to the fitter with the full band stack — including the bands whose beam was below the floor. In the apparent path those bands enter the model with a near-zero beam; in the intrinsic path they get a `B^2` weight near zero (D17) after `pfb restore` has already divided by that same small beam. Either way the field edge is fitted from a bandwidth it does not really have, which biases alpha. The beam narrows with frequency, so the highest-frequency band sets the cut. Invisible in `pfb_tree`, whose beam is band-independent, so `tests/test_spifit.py` builds a `1/freq` beam fixture; against the old code that test found fitted pixels whose band-minimum beam was `0.041` at `pb_min = 0.15`. |
+| D20 | `spifit`'s `--threshold` cut is applied to the **apparent** flux on both flux scales: the intrinsic path multiplies `IMAGE` by `BEAM` before comparing it to the rms. | `threshold` is an SNR cut, and every rms `spifit` can reach is apparent -- pfb's band `RESIDUAL` is apparent flux (`pfb_imaging/utils/restoration.py`) and `init` takes `RMS` from the input residual FITS (`core/init.py`). Testing `IMAGE`, which `pfb restore` has already divided by the beam, against that rms cuts at `threshold * B(p)` instead of `threshold`: at `pb_min = 0.15` a nominal 10-sigma cut becomes 1.5 sigma at the edge of the footprint, in exactly the pixels where dividing by the beam has inflated the noise. Because `B <= 1` gives `IMAGE >= BIMAGE` elementwise, the intrinsic mask was always a strict *superset* of the apparent one -- never the reverse -- so the intrinsic alpha map grew a low-SNR skirt the apparent one did not have. Measured on a self-consistent synthetic tree with a `1/freq` beam: 7135 fitted pixels intrinsic against 4148 apparent, the extra 2987 sitting at `B` between 0.20 and 0.56 with 0.316 alpha scatter against 0.113 on the shared pixels; alpha on the shared pixels agreed to 4.2e-7, so the fit itself was never in question (D17), only the mask. Pinned by `test_threshold_cuts_the_same_pixels_on_both_flux_scales`. |
 
 
 ## Bugs found and fixed during the DataTree refactor
@@ -200,6 +201,42 @@ anyway because it is what makes the intrinsic and apparent fits identical (D17),
 because the apparent path shares the same implicit flat-noise assumption — moving to
 `SPATIALWGT` means changing both paths together. The two coincide for single-pointing
 bands, which is every tree the tests cover.
+
+### `IMAGE` is not exactly `BIMAGE / BEAM` in a pfb tree
+
+D17 makes the two flux scales the same normal equations *given* `IMAGE == BIMAGE / BEAM`.
+`pfb restore` does not quite produce that. From `pfb_imaging/utils/restoration.py`
+(`restore_products`, verified at pfb-imaging `eb1bc6d`), with `C[.]` the convolution to
+the target resolution, `M` the model and `R` the residual:
+
+```
+BIMAGE = C[B * M] + C[R]
+IMAGE  = C[M]     + C[R] / B
+```
+
+so `B * IMAGE = B * C[M] + C[R]`, which differs from `BIMAGE` by `C[B*M] - B*C[M]`.
+Convolution does not commute with multiplication by a spatially varying beam, and pfb's
+own comment on the `"a"` branch says exactly that. For clean components the discrepancy is
+`sum_k M_k (B(p_k) - B(p)) G(p - p_k)` — the beam's variation across one restoring beam —
+so it is small for a smooth beam and a compact restoring beam, but it is not zero. It is
+the floor on how well the two `--flux-scale` runs can ever agree on a pfb tree, and it is
+physics rather than a bug on either side. Note also that `restore_products` zeroes `IMAGE`
+below its own `pb_min` (default 0.1), so `spifit --pb-min` below that value fits zeros;
+the flux threshold happens to exclude them anyway.
+
+### Ringing in `IMAGE` is the upstream truncation defect, amplified by `1 / B`
+
+`restore_products` divides by the intrinsic kernel's transform whenever
+`gausspari != gaussparf`, i.e. on any `pfb restore --gausspar` run, and pfb's `gaussian2d`
+still truncates at `nsigma * sigma_maj` (5 sigma) — the exact combination diagnosed under
+"A regression introduced and reverted" above and filed as
+[ratt-ru/pfb-imaging#312](https://github.com/ratt-ru/pfb-imaging/issues/312), still present
+at pfb-imaging `eb1bc6d`. The model convolution is clean (no division), so the ringing
+lives entirely in `rconv`. It therefore enters `BIMAGE` as `rconv` but `IMAGE` as
+`rconv / B`, up to `1 / pb_min` times stronger at the edge of the footprint. Before D20 the
+intrinsic threshold also admitted precisely that region, so the two effects compounded and
+the artefacts were visible in the intrinsic alpha map while the apparent one looked clean.
+Nothing to fix in spimple; fixing it means `nsigma * fwhm` upstream.
 
 ### Stray `print()` calls in `utils/beam.py`
 

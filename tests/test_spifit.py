@@ -95,13 +95,38 @@ def test_beam_cut_excludes_pixels_failing_in_any_band(narrowing_beam_tree, tmp_p
     assert np.isfinite(alpha_lo[straddle]).any(), "no fittable flux in the straddle annulus"
 
 
-def test_beam_cut_is_identical_across_flux_scales(narrowing_beam_tree, tmp_path):
-    """The mask comes from BEAM, so both scales must drop the same pixels.
+def test_threshold_cuts_the_same_pixels_on_both_flux_scales(narrowing_beam_tree, tmp_path):
+    """--threshold is an SNR cut, and the noise is flat in the apparent image.
 
-    The apparent image is attenuated, so its flux threshold bites harder; the
-    beam cut itself must not differ, hence comparing supersets rather than
-    equality.
+    Every rms spifit can reach is apparent: pfb's band RESIDUAL is apparent
+    flux and init derives RMS from the input residual. IMAGE has already been
+    divided by the beam, so testing it against that rms cuts at threshold * B
+    and admits the field edge at a few sigma. Both scales must therefore end up
+    fitting exactly the same pixels.
     """
+    app = str(tmp_path / "spi_app")
+    intr = str(tmp_path / "spi_int")
+    spifit(narrowing_beam_tree, app, flux_scale="apparent", products="a", pb_min=PB_MIN)
+    spifit(narrowing_beam_tree, intr, flux_scale="intrinsic", products="a", pb_min=PB_MIN)
+
+    fitted_app = np.isfinite(fits.getdata(f"{app}_time0.alpha.fits").squeeze())
+    fitted_int = np.isfinite(fits.getdata(f"{intr}_time0.alpha.fits").squeeze())
+
+    assert fitted_app.any()
+    np.testing.assert_array_equal(fitted_int, fitted_app)
+
+    # Non-vacuity: the threshold has to be biting somewhere the beam is well
+    # below one, or dividing it out could not have moved the mask.
+    beams = _band_beams(narrowing_beam_tree)
+    assert beams.min(axis=0)[fitted_app].min() < 0.5
+    loose = str(tmp_path / "spi_loose")
+    spifit(narrowing_beam_tree, loose, flux_scale="intrinsic", products="a", pb_min=PB_MIN, threshold=1.0)
+    fitted_loose = np.isfinite(fits.getdata(f"{loose}_time0.alpha.fits").squeeze())
+    assert fitted_loose.sum() > fitted_app.sum(), "threshold is not the binding constraint here"
+
+
+def test_beam_cut_is_identical_across_flux_scales(narrowing_beam_tree, tmp_path):
+    """The mask comes from BEAM, so both scales must drop the same pixels."""
     app = str(tmp_path / "spi_app")
     intr = str(tmp_path / "spi_int")
     spifit(narrowing_beam_tree, app, flux_scale="apparent", products="a", pb_min=PB_MIN)

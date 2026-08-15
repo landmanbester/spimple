@@ -48,7 +48,8 @@ cabs:
         default: aeikId
       threshold:
         info:
-          Multiple of the residual rms below which pixels are not fitted
+          Multiple of the residual rms below which pixels are not fitted.
+          The cut is on apparent flux, so it means the same thing on both flux scales
         dtype: float
         default: 10.0
       max-dr:
