@@ -3,8 +3,8 @@ type: reference
 title: Design decisions and known defects
 description: The decision ledger for the hip-cargo port, plus the defects diagnosed but not fixed.
 tags: [architecture, decisions, known-issues]
-timestamp: 2026-08-13
-last_verified_commit: b7bfbc4
+timestamp: 2026-08-15
+last_verified_commit: af2d642
 ---
 
 # Design decisions and known defects
@@ -46,6 +46,8 @@ an org package inherits its repository's access.)
 | D14 | `init` writes the restore-named products `IMAGE`/`BIMAGE`/`KIMAGE` plus `PSFPARSF`, and never persists a native-resolution `MODEL`/`RESIDUAL`. | Identical variable names to `pfb restore` means `spifit` needs no origin-specific branching. The input FITS is already the archive of the native-resolution data, so copying it into the store buys nothing. |
 | D15 | The band beam after mosaicking is `sum B^2 / sum B`, the beam-weighted mean — deliberately not pfb's WSUM-weighted mean. | It is the reduction consistent with the `B^2`-weighted solve that produced `IMAGE`, so `BEAM * IMAGE` is exactly the beam-weighted mean apparent image. pfb's D28 warns specifically against reducing a quantity and its weighting by different rules at the same level. Reduces to `B` where partitions agree and to `B_p` where only `p` covers. |
 | D16 | The mosaic normal equations are solved directly, not by conjugate gradient. | `(sum_p mask_p B_p^2 + eta) S = sum_p B_p A_p` is diagonal — purely elementwise — so the exact solution is one division and CG only iterates towards it. `conjugate_gradient` is retained for a future non-diagonal formulation and pinned against the direct solve by a test. `--cg-max-iter`/`--cg-tol` were dropped; `--eta` stays. |
+| D17 | `fit_spi_components` is vendored into `utils/fit_spi.py` and its weights carry a component axis, so `--flux-scale intrinsic` weights by `B^2`. | Image-plane noise is flat in the *apparent* image, so `IMAGE = BIMAGE / BEAM` has variance `sigma_v^2 / B(v,p)^2` and its inverse-variance weight is `B(v,p)^2 / sigma_v^2`. The beam narrows with frequency, so that weight does not factorise into a `(chan,)` vector — africanus's signature cannot express it, which is why the intrinsic path previously fitted with unity weights. With `B^2` weights the intrinsic fit is *algebraically the same normal equations* as the apparent fit with the beam in the model (`sum_v w_v (d_app - B_v M_v)^2 = sum_v (w_v B_v^2)(d_int - M_v)^2`), so the two scales become a consistency check on `BIMAGE`, `IMAGE` and `BEAM` agreeing in the tree rather than two differently-weighted estimators. Pinned to machine precision in `tests/test_fit_spi.py` and end-to-end in `test_intrinsic_and_apparent_scales_give_the_same_alpha`. |
+| D18 | `spifit` has no `--flux-scale mixed`; `KIMAGE` is not fittable and asking for it, or handing over a tree carrying only it, is an early error naming the `pfb restore` rerun. | `KIMAGE` is an intrinsic model plus an *apparent* residual, so its signal and its noise sit on different flux scales and no single beam relates them. Fitting it with the beam in the model — what the removed `mixed` path did — drove `I0` up roughly as `1/B` towards the field edge; fitting it without one mis-weights the residual instead. There is no correct setting, only two wrong ones, so the option is gone rather than fixed. It has to fail early and loudly because `pfb restore` defaults to `--outputs kK`, which writes `KIMAGE` *only*, so the tree a user most likely has is exactly the one that cannot be fitted. `init` and `mosaic` still carry `KIMAGE` through the tree (D14); it is only the fit that refuses it. |
 
 
 ## Bugs found and fixed during the DataTree refactor
@@ -186,6 +188,17 @@ skip in `tests/test_mosaic.py`, which does cover `mosaic_info`.
 
 `spifit` accepts `channel_weights_keyword` (default `WSCIMWG`) but the residual-weighting
 branch hardcodes `WSCVWSUM`. The option has no effect there.
+
+### The `B^2` fit weight ignores how many pointings covered a pixel
+
+For a band mosaicked from overlapping pointings the true inverse variance of `IMAGE` is
+`SPATIALWGT = sum_p B_p^2 + eta`, not `BEAM^2 = (sum_p B_p^2 / sum_p B_p)^2`. Two
+identical overlapping pointings give `SPATIALWGT = 2 B^2` but `BEAM^2 = B^2`, so the
+overlap is under-weighted by exactly the factor the mosaic bought. `BEAM^2` is used
+anyway because it is what makes the intrinsic and apparent fits identical (D17), and
+because the apparent path shares the same implicit flat-noise assumption — moving to
+`SPATIALWGT` means changing both paths together. The two coincide for single-pointing
+bands, which is every tree the tests cover.
 
 ### Stray `print()` calls in `utils/beam.py`
 

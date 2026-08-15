@@ -1,9 +1,9 @@
 import numpy as np
 import pytest
-from africanus.model.spi import fit_spi_components
 from numpy.testing._private.utils import assert_allclose
 
 from spimple.utils.convolution import Gaussian2D, convolve2gaussres
+from spimple.utils.fit_spi import fit_spi_components_np as fit_spi_components
 
 pmp = pytest.mark.parametrize
 

@@ -17,7 +17,14 @@ from spimple.utils.logging import get_logger, log_options
 
 log = get_logger("SPIFIT")
 
-_SCALES = {"apparent": "a", "intrinsic": "i", "mixed": "k"}
+_SCALES = {"apparent": "a", "intrinsic": "i"}
+
+# What to tell a user who reaches for KIMAGE, whether by asking for the removed
+# mixed scale or by handing over a tree that carries nothing else.
+_RESTORE_HINT = (
+    "rerun pfb restore with --outputs a, which writes BIMAGE for --flux-scale apparent, "
+    "or --outputs i, which writes IMAGE for --flux-scale intrinsic"
+)
 
 
 def spifit(
@@ -41,18 +48,26 @@ def spifit(
     or by pfb restore with a target resolution. Multi partition trees written by
     spimple init must be combined with spimple mosaic first.
 
-    flux_scale has no default deliberately: the three scales carry different
+    flux_scale has no default deliberately: the two scales carry different
     physical meanings and which products a tree even holds depends on how it was
     made, so the caller states which one they are fitting rather than having one
-    chosen for them.
+    chosen for them. KIMAGE is not fittable at all -- it is an intrinsic model
+    plus an apparent residual, so no single beam relates its signal to its noise.
     """
     log_options(log, **locals())
 
     import dask.array as da
-    from africanus.model.spi.dask import fit_spi_components
+
+    from spimple.utils.fit_spi import fit_spi_components
 
     if not nthreads:
         nthreads = multiprocessing.cpu_count()
+    if flux_scale == "mixed":
+        raise ValueError(
+            "--flux-scale mixed was removed. KIMAGE is an intrinsic model plus an apparent residual, "
+            "so its signal and its noise sit on different flux scales and fitting it biases the flux "
+            f"towards the field edge. Fit a single-scale product instead: {_RESTORE_HINT}"
+        )
     if flux_scale not in _SCALES:
         raise ValueError(f"Unknown flux-scale {flux_scale}, expected one of {sorted(_SCALES)}")
     column = PRODUCT_VARS[_SCALES[flux_scale]]
@@ -88,17 +103,21 @@ def spifit(
         for node in keep:
             if column not in dt[node].ds:
                 available = sorted(v for v in PRODUCT_VARS.values() if v in dt[node].ds)
+                fittable = [
+                    (scale, name)
+                    for scale, name in (("apparent", "BIMAGE"), ("intrinsic", "IMAGE"))
+                    if name in available
+                ]
                 if partition_nodes(dt, node) and not available:
                     hint = "run spimple mosaic to combine its partitions"
+                elif fittable:
+                    scales = ", ".join(f"{name} for --flux-scale {scale}" for scale, name in fittable)
+                    hint = f"the tree carries {scales}"
                 elif available:
-                    scales = ", ".join(
-                        f"{name} for --flux-scale {scale}"
-                        for scale, name in (("apparent", "BIMAGE"), ("intrinsic", "IMAGE"), ("mixed", "KIMAGE"))
-                        if name in available
-                    )
+                    # KIMAGE only, which pfb restore's default --outputs kK gives
                     hint = (
-                        f"the tree carries {scales}. Note pfb restore defaults to --outputs kK, "
-                        "which writes KIMAGE only"
+                        f"the tree carries {', '.join(available)} only, which mixes flux scales and cannot be "
+                        f"fitted. Note pfb restore defaults to --outputs kK; {_RESTORE_HINT}"
                     )
                 else:
                     hint = "the tree carries no restored product at all"
@@ -167,6 +186,8 @@ def spifit(
         # the fit runs on Stokes I; other correlations are carried in the header only
         image = cube[:, 0]
         pbeam = beam[:, 0]
+        # the intrinsic image is already beam corrected, so the beam leaves the
+        # model and reappears in the weights below
         fit_beam = np.ones_like(pbeam) if flux_scale == "intrinsic" else pbeam
 
         masked = np.where(pbeam > pb_min, image, np.nan)
@@ -182,10 +203,24 @@ def spifit(
 
         ncomps = fitcube.shape[0]
         cchunks = max(1, ncomps // nthreads)
+
+        # Image plane noise is flat in the apparent image, so IMAGE = BIMAGE /
+        # BEAM has variance sigma_v ** 2 / B(v, p) ** 2 and its inverse variance
+        # weight carries B ** 2. That weight depends on position as well as
+        # frequency, because the beam narrows with frequency, so it needs the
+        # component axis. Weighting this way makes the intrinsic fit algebraically
+        # identical to the apparent one, which is what makes the two a
+        # consistency check on IMAGE, BIMAGE and BEAM agreeing in the tree.
+        if flux_scale == "intrinsic":
+            pbeam_comps = pbeam[:, maskindices[:, 0], maskindices[:, 1]].T
+            fit_weights = da.from_array((weights[None, :] * pbeam_comps**2).astype(np.float64), chunks=(cchunks, nband))
+        else:
+            fit_weights = da.from_array(weights.astype(np.float64), chunks=(nband,))
+
         log.info("Fitting %s components", ncomps)
         alpha, alpha_err, i0, i0_err = fit_spi_components(
             da.from_array(fitcube.astype(np.float64), chunks=(cchunks, nband)),
-            da.from_array(weights.astype(np.float64), chunks=(nband,)),
+            fit_weights,
             da.from_array(freqs.astype(np.float64), chunks=(nband,)),
             np.float64(nu_ref),
             beam=da.from_array(beam_comps.astype(np.float64), chunks=(cchunks, nband)),
