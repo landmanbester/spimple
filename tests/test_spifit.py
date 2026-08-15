@@ -10,6 +10,110 @@ from spimple.core.init import init, store_name
 from spimple.core.spifit import spifit
 from spimple.utils.datatree import band_nodes, open_store, write_node
 
+PB_MIN = 0.15
+
+
+@pytest.fixture
+def narrowing_beam_tree(pfb_tree, tmp_path):
+    """pfb_tree with a beam that narrows as 1 / freq, and BIMAGE kept consistent.
+
+    The shipped pfb_tree writes one band independent beam, which makes every
+    band's beam mask identical and hides any difference between an all bands
+    cut and a per band one. A real primary beam narrows with frequency, so the
+    two disagree over an annulus.
+    """
+    import shutil
+
+    from spimple.utils.datatree import partition_node_name
+
+    tree = str(tmp_path / "narrowing_I.dt")
+    shutil.copytree(pfb_tree, tree)
+    dt = open_store(tree)
+    nodes = band_nodes(dt)
+    freqs = np.array([float(dt[n].ds.attrs["freq_out"]) for n in nodes])
+
+    npix = dt[nodes[0]].ds.IMAGE.shape[-1]
+    v = np.arange(npix) - npix // 2
+    yy, xx = np.meshgrid(v, v, indexing="ij")
+    rsq = (xx**2 + yy**2).astype(np.float64)
+
+    for node, freq in zip(nodes, freqs):
+        sigma = 6.0 * freqs[0] / freq
+        beam = np.exp(-rsq / (2 * sigma**2))[None].astype(np.float32)
+        intrinsic = dt[node].ds.IMAGE.values
+        write_node(
+            tree,
+            node,
+            {
+                "BEAM": (("corr", "y", "x"), beam),
+                "BIMAGE": (("corr", "y", "x"), (intrinsic * beam).astype(np.float32)),
+            },
+            {},
+            {"corr": ["I"]},
+        )
+        write_node(
+            tree,
+            f"{node}/{partition_node_name(0)}",
+            {"BEAM": (("corr", "y", "x"), beam)},
+            {},
+            {"corr": ["I"]},
+        )
+    return tree
+
+
+def _band_beams(tree):
+    """(nband, ny, nx) stack of the tree's band beams, Stokes I only."""
+    dt = open_store(tree)
+    return np.stack([dt[n].ds.BEAM.values[0] for n in band_nodes(dt)])
+
+
+def test_beam_cut_excludes_pixels_failing_in_any_band(narrowing_beam_tree, tmp_path):
+    """pb_min is an all bands cut, set by the band with the smallest beam.
+
+    A pixel whose beam clears pb_min at the bottom of the band but not at the
+    top must not be fitted at all. Fitting it would either weight the top band
+    by a near zero beam or divide by one, which is what biases alpha towards
+    the field edge.
+    """
+    out = str(tmp_path / "spi_cut")
+    spifit(narrowing_beam_tree, out, flux_scale="intrinsic", products="a", pb_min=PB_MIN)
+    alpha = fits.getdata(f"{out}_time0.alpha.fits").squeeze()
+
+    beams = _band_beams(narrowing_beam_tree)
+    fitted = np.isfinite(alpha)
+
+    assert fitted.any()
+    assert (beams.min(axis=0)[fitted] > PB_MIN).all(), "a fitted pixel fails pb_min in at least one band"
+
+    # Non-vacuity: the straddle annulus must exist and must hold flux that
+    # would otherwise have been fitted, or the assertion above proves nothing.
+    straddle = (beams.min(axis=0) <= PB_MIN) & (beams.max(axis=0) > PB_MIN)
+    assert straddle.any()
+    lo = str(tmp_path / "spi_nocut")
+    spifit(narrowing_beam_tree, lo, flux_scale="intrinsic", products="a", pb_min=1e-3)
+    alpha_lo = fits.getdata(f"{lo}_time0.alpha.fits").squeeze()
+    assert np.isfinite(alpha_lo[straddle]).any(), "no fittable flux in the straddle annulus"
+
+
+def test_beam_cut_is_identical_across_flux_scales(narrowing_beam_tree, tmp_path):
+    """The mask comes from BEAM, so both scales must drop the same pixels.
+
+    The apparent image is attenuated, so its flux threshold bites harder; the
+    beam cut itself must not differ, hence comparing supersets rather than
+    equality.
+    """
+    app = str(tmp_path / "spi_app")
+    intr = str(tmp_path / "spi_int")
+    spifit(narrowing_beam_tree, app, flux_scale="apparent", products="a", pb_min=PB_MIN)
+    spifit(narrowing_beam_tree, intr, flux_scale="intrinsic", products="a", pb_min=PB_MIN)
+
+    beams = _band_beams(narrowing_beam_tree)
+    for path in (app, intr):
+        alpha = fits.getdata(f"{path}_time0.alpha.fits").squeeze()
+        fitted = np.isfinite(alpha)
+        assert fitted.any()
+        assert (beams.min(axis=0)[fitted] > PB_MIN).all()
+
 
 def test_recovers_the_injected_spectral_index(pfb_tree, true_alpha, tmp_path):
     out = str(tmp_path / "spi")

@@ -58,7 +58,8 @@ cabs:
         default: 1000.0
       pb-min:
         info:
-          Beam floor below which pixels are excluded from the fit
+          Beam floor below which pixels are excluded from the fit.
+          A pixel is fitted only where every band clears this floor
         dtype: float
         default: 0.15
       deselect-bands:

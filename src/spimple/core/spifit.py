@@ -190,12 +190,27 @@ def spifit(
         # model and reappears in the weights below
         fit_beam = np.ones_like(pbeam) if flux_scale == "intrinsic" else pbeam
 
-        masked = np.where(pbeam > pb_min, image, np.nan)
-        minimage = np.nanmin(masked, axis=0)
-        maskindices = np.argwhere(np.isfinite(minimage) & (minimage > threshold_val))
+        # The beam cut is all or nothing across bands: a pixel is fitted only
+        # where every band clears pb_min, so the band with the smallest beam
+        # sets the cut. That is the highest frequency band, the beam narrowing
+        # with frequency. Cutting band by band instead would fit some pixels
+        # from a subset of the bands while still handing the fitter the bands
+        # that failed, biasing alpha by the very beam ratio it is measuring.
+        beam_min = pbeam.min(axis=0)
+        beam_ok = beam_min > pb_min
+        log.info(
+            "Beam cut at pb_min %s keeps %s of %s pixels",
+            pb_min,
+            int(beam_ok.sum()),
+            beam_ok.size,
+        )
+        # min, not nanmin: a band that is NaN at a pixel is a band the fit
+        # would have consumed as NaN anyway, so the pixel is not fittable
+        minimage = image.min(axis=0)
+        maskindices = np.argwhere(beam_ok & np.isfinite(minimage) & (minimage > threshold_val))
         if not maskindices.size:
             raise ValueError(
-                "No components found above threshold. Try lowering your threshold. "
+                f"No components found above threshold. Try lowering your threshold or pb_min ({pb_min}). "
                 f"Max of the image is {np.nanmax(image):3.2e}"
             )
         fitcube = image[:, maskindices[:, 0], maskindices[:, 1]].T
