@@ -19,8 +19,8 @@ consumed directly. FITS input from any other imager is ingested into the same la
 
 ```bash
 # images from pfb-imaging: no ingest step at all
-pfb restore --output-filename out --gausspar 0.00222 0.00178 0.0  # degrees: 8.0 x 6.4 arcsec
-spimple spifit --store out_I.dt --flux-scale mixed --output-filename spi
+pfb restore --output-filename out --gausspar 0.00222 0.00178 0.0 --outputs iI  # degrees: 8.0 x 6.4 arcsec
+spimple spifit --store out_I.dt --flux-scale intrinsic --output-filename spi
 
 # FITS from any other imager
 spimple init --images "field*-model.fits" --residual "field*-residual.fits" \
@@ -29,10 +29,11 @@ spimple mosaic --store out_I.dt            # only if the input had several point
 spimple spifit --store out_I.dt --flux-scale apparent --output-filename spi
 ```
 
-`--flux-scale` is required and has no default: the three scales mean different things,
-and which products a tree even holds depends on how it was made. `pfb restore` defaults to
-`--outputs kK`, which writes `KIMAGE` only — hence `--flux-scale mixed` above. Ask it for
-`--outputs kKaA` if you want the apparent scale too.
+`--flux-scale` is required and has no default: the two scales mean different things, and
+which products a tree even holds depends on how it was made. Watch out for `pfb restore`'s
+default of `--outputs kK`, which writes `KIMAGE` only: that product is an intrinsic model
+plus an apparent residual, so it is not fittable and `spifit` refuses it. Ask restore for
+`--outputs i` or `--outputs a`, as above.
 
 `pfb imager` mosaics in visibility space, so its band nodes arrive already populated —
 **`spimple mosaic` is never part of a pfb workflow.**
@@ -109,10 +110,11 @@ spimple spifit \
 named `<output-filename>_time{t}.<product>.fits`. Unfitted pixels are `NaN`, not zero.
 
 `--flux-scale` is **required** and picks which stored product to fit: `apparent`
-(`BIMAGE`, fitted together with the beam), `intrinsic` (`IMAGE`, already beam-corrected)
-or `mixed` (`KIMAGE`). All three pass the band's mean `BEAM` map to the fitter as the
-first-order response; `mixed` is an intrinsic model plus an apparent residual, so its beam
-handling is approximate by construction. The tree must already be at one resolution —
+(`BIMAGE`, fitted with the beam in the model) or `intrinsic` (`IMAGE`, already
+beam-corrected, fitted with `BEAM²` weights). The two are the same weighted least-squares
+problem written two ways, so they agree to machine precision on a self-consistent tree —
+run both as a check on the tree's products. `KIMAGE` is not fittable and there is no
+`mixed` scale; see the note above. The tree must already be at one resolution —
 `spimple init` or `pfb restore --gausspar` does that.
 
 ### Interpolate a primary beam
@@ -137,7 +139,12 @@ comma-separated string and accept glob patterns.
 - `spifit` and `mosaic` take `--store`, a datatree, instead of FITS images. Their
   FITS-specific options are gone; convolution, beams, frequencies and weights now come
   from the tree.
-- `spifit --flux-scale` is required, with no default.
+- `spifit --flux-scale` is required, with no default, and no longer accepts `mixed`.
+  `KIMAGE` mixes an intrinsic model with an apparent residual, so fitting it biased the
+  flux towards the field edge; `spifit` now errors out naming the `pfb restore` rerun.
+- `spifit --flux-scale intrinsic` now weights each pixel by `BEAM²` instead of fitting
+  with unity weights, which makes it agree with `--flux-scale apparent` exactly. Fitted
+  spectral indices and their errors change wherever the beam varies across the band.
 - `imconv` is deprecated and warns on use. It will be removed in a following release.
 - `Gaussian2D` was producing kernels 8.51 % too wide, so every convolution now homogenises
   to the resolution actually requested. Output changes accordingly.

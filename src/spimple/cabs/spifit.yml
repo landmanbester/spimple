@@ -28,12 +28,10 @@ cabs:
         info:
           Flux scale to fit.
           Apparent uses BIMAGE.
-          Intrinsic uses IMAGE.
-          Mixed uses KIMAGE
+          Intrinsic uses IMAGE
         choices:
         - apparent
         - intrinsic
-        - mixed
         required: true
         policies:
           positional: true

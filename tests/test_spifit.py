@@ -33,6 +33,29 @@ def test_apparent_scale_recovers_the_same_index(pfb_tree, true_alpha, tmp_path):
     assert np.median(fitted) == pytest.approx(true_alpha, abs=0.05)
 
 
+def test_intrinsic_and_apparent_scales_give_the_same_alpha(pfb_tree, tmp_path):
+    """The two scales are one weighted least squares problem, not two estimators.
+
+    The intrinsic fit drops the beam from the model and carries it as a B ** 2
+    weight instead, which is algebraically the same normal equations as fitting
+    the apparent image with the beam in the model. Any disagreement therefore
+    means BIMAGE, IMAGE and BEAM disagree in the tree rather than that the
+    estimators differ. Only the shared pixels are compared, because each scale
+    thresholds on its own image and the apparent one is attenuated.
+    """
+    app = str(tmp_path / "spi_app")
+    intr = str(tmp_path / "spi_int")
+    spifit(pfb_tree, app, flux_scale="apparent", products="a")
+    spifit(pfb_tree, intr, flux_scale="intrinsic", products="a")
+
+    a = fits.getdata(f"{app}_time0.alpha.fits").squeeze()
+    i = fits.getdata(f"{intr}_time0.alpha.fits").squeeze()
+    both = np.isfinite(a) & np.isfinite(i)
+
+    assert both.sum() > 0
+    np.testing.assert_allclose(i[both], a[both], rtol=0, atol=1e-5)
+
+
 def test_unfitted_pixels_are_nan_not_zero(pfb_tree, tmp_path):
     out = str(tmp_path / "spi")
     spifit(pfb_tree, out, flux_scale="intrinsic", products="a")
@@ -179,5 +202,18 @@ def test_missing_product_error_names_what_is_available(pfb_tree, tmp_path):
         for var in ("BIMAGE", "IMAGE"):
             shutil.rmtree(f"{konly}/{node}/{var}", ignore_errors=True)
 
-    with pytest.raises(ValueError, match="KIMAGE"):
+    with pytest.raises(ValueError, match="KIMAGE") as excinfo:
         spifit(konly, str(tmp_path / "spi"), flux_scale="apparent", products="a")
+
+    # a KIMAGE-only tree has no fittable product at all, so the message has to
+    # send the user back to pfb restore rather than name another --flux-scale
+    assert "pfb restore" in str(excinfo.value)
+    assert "--outputs a" in str(excinfo.value)
+
+
+def test_mixed_flux_scale_is_rejected(pfb_tree, tmp_path):
+    """The mixed scale was removed; the error must say what to run instead."""
+    with pytest.raises(ValueError, match="mixed was removed") as excinfo:
+        spifit(pfb_tree, str(tmp_path / "spi"), flux_scale="mixed", products="a")
+
+    assert "pfb restore" in str(excinfo.value)

@@ -44,10 +44,10 @@ def spifit(
         ),
     ],
     flux_scale: Annotated[
-        Literal["apparent", "intrinsic", "mixed"],
+        Literal["apparent", "intrinsic"],
         typer.Option(
             ...,
-            help="Flux scale to fit. Apparent uses BIMAGE. Intrinsic uses IMAGE. Mixed uses KIMAGE",
+            help="Flux scale to fit. Apparent uses BIMAGE. Intrinsic uses IMAGE",
         ),
     ],
     products: Annotated[

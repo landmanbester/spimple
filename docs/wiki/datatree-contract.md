@@ -3,8 +3,8 @@ type: reference
 title: The DataTree contract with pfb-imaging
 description: The store layout spimple reads and writes, its invariants, and how a spimple tree differs from a pfb-imaging one.
 tags: [datatree, zarr, pfb-imaging, interop, conventions]
-timestamp: 2026-08-13
-last_verified_commit: b7bfbc4
+timestamp: 2026-08-15
+last_verified_commit: af2d642
 ---
 
 # The DataTree contract with pfb-imaging
@@ -83,7 +83,7 @@ spimple tree could silently diverge from a pfb one.
 |---|---|
 | **Axis order** | Every image variable is `(corr, y, x)`. No transposes on the tree path; `save_fits` is called with `yx_order=True`. The only test that catches a violation is the orientation test in `tests/test_render.py` — everything else passes while transposed. |
 | **Resolution units** | `PSFPARSN`/`PSFPARSF` are `(emaj, emin, pa)` in **pixels, pixels, radians**, matching pfb. FITS `BMAJ`/`BMIN` (degrees) are divided by `cell_deg`; `BPA` goes through `deg2rad`. `set_wcs` converts back with `unit2deg=cell_x`. |
-| **Flux scale** | `IMAGE` intrinsic, `BIMAGE` apparent, `KIMAGE` mixed — pfb's three scales, same names (`PRODUCT_VARS`). All are Jy/beam at `PSFPARSF`, already normalised. |
+| **Flux scale** | `IMAGE` intrinsic, `BIMAGE` apparent, `KIMAGE` mixed — pfb's three scales, same names (`PRODUCT_VARS`). All are Jy/beam at `PSFPARSF`, already normalised. `spifit` fits `IMAGE` or `BIMAGE` only; `KIMAGE` mixes scales and is rejected (D18). |
 | **No native-resolution copy** | spimple never persists a native `MODEL`/`RESIDUAL`: the input FITS is the archive. pfb's "divide the stored `RESIDUAL` by `WSUM`" step therefore has no spimple analogue. |
 | **Beam semantics** | On a spimple tree `BEAM` is the bare primary beam and `beam_includes_n` is False. On a pfb tree `BEAM` is `B/n` with the flag True — see design-decisions.md. |
 | **Grid** | Every partition under a band node is on the union grid. Native-grid arrays are never stored: `reproject_interp` conserves surface brightness, not flux, so a Jy/pixel model would not survive it. Convolving first makes everything Jy/beam, after which reprojection is sound. |
