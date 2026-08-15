@@ -109,6 +109,10 @@ spimple spifit \
 `I` reconstructed cube, `d` data minus fitted model, `b` average power beam. Files are
 named `<output-filename>_time{t}.<product>.fits`. Unfitted pixels are `NaN`, not zero.
 
+`--pb-min` is an **all-bands** cut: a pixel is fitted only where every band's beam clears
+the floor, so the band with the smallest beam — the highest frequency one — sets the
+footprint. No pixel is ever fitted from a subset of the bands.
+
 `--flux-scale` is **required** and picks which stored product to fit: `apparent`
 (`BIMAGE`, fitted with the beam in the model) or `intrinsic` (`IMAGE`, already
 beam-corrected, fitted with `BEAM²` weights). The two are the same weighted least-squares
@@ -142,6 +146,10 @@ comma-separated string and accept glob patterns.
 - `spifit --flux-scale` is required, with no default, and no longer accepts `mixed`.
   `KIMAGE` mixes an intrinsic model with an apparent residual, so fitting it biased the
   flux towards the field edge; `spifit` now errors out naming the `pfb restore` rerun.
+- `spifit --pb-min` now cuts on every band rather than on each band separately. Pixels
+  whose beam fell below the floor in only some bands were previously fitted anyway, using
+  the whole band stack including the bands that failed. The fitted footprint shrinks to
+  the highest-frequency band's, and alpha near the field edge changes.
 - `spifit --flux-scale intrinsic` now weights each pixel by `BEAM²` instead of fitting
   with unity weights, which makes it agree with `--flux-scale apparent` exactly. Fitted
   spectral indices and their errors change wherever the beam varies across the band.

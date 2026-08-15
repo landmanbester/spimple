@@ -78,7 +78,8 @@ def spifit(
     pb_min: Annotated[
         float,
         typer.Option(
-            help="Beam floor below which pixels are excluded from the fit",
+            help="Beam floor below which pixels are excluded from the fit. "
+            "A pixel is fitted only where every band clears this floor",
         ),
     ] = 0.15,
     deselect_bands: Annotated[
